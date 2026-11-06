@@ -1,0 +1,1 @@
+"""Operation Ward Zero application."""
