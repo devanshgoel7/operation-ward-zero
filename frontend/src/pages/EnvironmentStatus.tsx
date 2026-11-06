@@ -10,14 +10,11 @@ export function EnvironmentStatus() {
   });
   const status = query.isError ? "Service unreachable" : query.data ?? "Checking service…";
   return (
-    <>
-      <header><span className="mark" aria-hidden="true">+</span>Operation Ward Zero</header>
-      <main>
-        <p className="context">Local development</p>
-        <h1>Environment status</h1>
+    <footer>
+        <h2>Environment status</h2>
         <section aria-label="Application health">
           <div>
-            <h2>Application readiness</h2>
+            <h3>Application readiness</h3>
             <p>Checks the PostgreSQL connection and migration version.</p>
           </div>
           <strong role="status" data-ready={status === "Service ready"}>{status}</strong>
@@ -26,7 +23,6 @@ export function EnvironmentStatus() {
           <a href="/openapi.json">OpenAPI contract</a>
           <a href="/health/ready">Readiness response</a>
         </nav>
-      </main>
-    </>
+    </footer>
   );
 }

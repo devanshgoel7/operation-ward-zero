@@ -18,6 +18,7 @@ services:
   app:
     build: .
     environment:
+      SIMULATOR_KEY: ${SIMULATOR_KEY:?Set SIMULATOR_KEY in .env}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_USER: wardzero
       POSTGRES_DB: wardzero
@@ -33,5 +34,17 @@ services:
       timeout: 5s
       retries: 6
 
+  simulator:
+    build:
+      context: .
+      target: simulator
+    environment:
+      BUFFER_PATH: /data/frames.sqlite3
+      INGEST_URL: http://app:8000/api/v1/readings
+      SIMULATOR_KEY: ${SIMULATOR_KEY:?Set SIMULATOR_KEY in .env}
+    volumes:
+      - simulator_data:/data
+
 volumes:
+  simulator_data:
   postgres_data:

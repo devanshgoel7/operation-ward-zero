@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.core.database import create_engine
 from app.api.health import router as health_router
+from app.api.monitoring import handlers, router as monitoring_router
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -24,6 +25,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await app.state.engine.dispose()
 
 
-app = FastAPI(title="Operation Ward Zero", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Operation Ward Zero", version="0.2.0", lifespan=lifespan, exception_handlers=handlers)
 app.include_router(health_router)
+app.include_router(monitoring_router)
 app.mount("/", StaticFiles(directory=ROOT / "static", html=True), name="shell")

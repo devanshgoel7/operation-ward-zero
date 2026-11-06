@@ -14,14 +14,12 @@ header {
   font-weight: 650;
 }
 .mark {
-  display: grid;
-  place-items: center;
+  flex: none;
   width: 2rem;
   height: 2rem;
   border-radius: .4rem;
   color: white;
   background: #1c6158;
-  font-size: 1.5rem;
 }
 main { max-width: 58rem; margin: clamp(3rem, 9vw, 8rem) auto; padding: 0 1.25rem; }
 .context { color: #42675c; margin: 0; font-weight: 600; }
@@ -43,3 +41,16 @@ strong { color: #804613; }
 strong[data-ready="true"] { color: #11634e; }
 nav { display: flex; flex-wrap: wrap; gap: 1.5rem; margin-top: 1.5rem; }
 a { color: #265e55; text-underline-offset: .2em; }
+main { max-width: 76rem; margin-block: clamp(2rem, 5vw, 4rem); }
+.patients { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); gap: 1rem; }
+article { background: white; padding: 1.5rem; border: 1px solid #cedbd5; border-top: .25rem solid #357b70; border-radius: .65rem; }
+article h2 { font-size: 1.55rem; }
+dl { margin: 1rem 0; }
+dl div { display: flex; align-items: baseline; justify-content: space-between; gap: .4rem; padding: .8rem 0; border-bottom: 1px solid #e2ebe7; }
+dt, small, .times { color: #4e6360; }
+dd { margin: 0; font-size: 1.15rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+small { font-size: .8rem; font-weight: normal; }
+.times { font-size: .85rem; line-height: 1.7; margin-bottom: 0; }
+footer { margin-top: 2.25rem; }
+footer section { margin-top: .75rem; }
+footer h3 { margin: 0; font-size: 1rem; }

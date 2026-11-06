@@ -1,16 +1,19 @@
 # Operation Ward Zero
 
-M0 provides a local React environment screen, a FastAPI service and a persistent PostgreSQL database. The screen polls service readiness every 15 seconds. The synthetic patient monitoring workflow starts in M1.
+The local dashboard shows synthetic vital signs for three fictional adults. Each home monitor samples every five seconds. The simulator commits frames to SQLite before sending them to FastAPI. PostgreSQL stores accepted readings and the dashboard polls for the latest observation every five seconds.
 
 ## Project layout
 
-The M0 source layout groups files by responsibility:
+The source layout groups files by responsibility.
 
 ```text
 backend/
   app/
     main.py                    FastAPI startup, router registration, static shell
     api/health.py              HTTP routes and status codes
+    api/monitoring.py          Sensor ingestion, dashboard, patient and history routes
+    services/monitoring.py     Transactional ingestion and patient queries
+    models/monitoring.py       Reading validation and monitoring contracts
     services/health.py         Database and migration readiness checks
     models/health.py           Typed health response contracts
     core/database.py           Shared SQLAlchemy engine configuration
@@ -19,9 +22,12 @@ backend/
 frontend/src/
   main.tsx                     React startup and query provider
   api/health.ts                Readiness request
+  api/monitoring.ts            Dashboard request with generated OpenAPI types
+  pages/Monitoring.tsx         Polling patient cards
   pages/EnvironmentStatus.tsx  Environment screen
   styles/global.css            Shell styles
 scripts/                       Operational verification
+simulator/                     Synthetic sampling, SQLite buffer and retrying upload
 docs/                          Architecture, decisions and milestone evidence
 ```
 
@@ -34,14 +40,48 @@ Use PowerShell from the repository root with Docker Desktop running in Linux con
 if (!(Test-Path -LiteralPath .env)) {
     Set-Content -Encoding ascii -LiteralPath .env -Value ('POSTGRES_PASSWORD=' + [guid]::NewGuid().ToString('N'))
 }
+# Add a private sensor key once, including when upgrading an existing M0 stack.
+if (!(Select-String -LiteralPath .env -Pattern '^SIMULATOR_KEY=' -Quiet)) {
+    Add-Content -Encoding ascii -LiteralPath .env -Value ('SIMULATOR_KEY=' + [guid]::NewGuid().ToString('N'))
+}
 docker compose config -q
 docker compose up --build --wait --wait-timeout 120
 docker compose ps
 ```
 
-Open the [environment screen](http://127.0.0.1:8010/) and look for **Service ready**. To select another loopback port, set `APP_PORT` in `.env`. PostgreSQL is accessible inside the Compose network. The app applies Alembic migrations before starting one Uvicorn worker. The M0 revision records the baseline in `alembic_version`.
+Open the [monitoring dashboard](http://127.0.0.1:8010/) and look for three populated patient cards and **Service ready**. To select another loopback port, set `APP_PORT` in `.env`. PostgreSQL is accessible inside the Compose network. The app applies migrations and seeds before starting one Uvicorn worker.
 
-Use `docker compose down` to stop the environment and retain the named database volume. Start it again with the same `up` command. Keep the generated `.env` private.
+Use `docker compose down` to stop the environment and retain both named volumes. Start it again with the same `up` command. Keep the generated `.env` private.
+
+## M1 monitoring contracts
+
+The [running OpenAPI contract](http://127.0.0.1:8010/docs) lists fields, units and response schemas.
+
+| Request | Behavior |
+|---|---|
+| `POST /api/v1/readings` | Requires `X-Simulator-Key`. Returns 201 after commit, or 200 with the original receipt timestamp for an identical retry. Conflicting UUID or device sequence returns 409. Invalid measurements or an unknown device return 422. |
+| `GET /api/v1/dashboard` | Returns server time, the two caregivers, and three patients with their latest readings. A patient awaiting a first reading has a null latest reading. |
+| `GET /api/v1/patients/{patient_id}` | Returns the registered patient, device and latest reading by observation time. |
+| `GET /api/v1/patients/{patient_id}/readings` | Returns newest-first history. Use timezone-aware `from` and `to`, a `limit` (default 500, maximum 2,000) and the returned `next_cursor`. The default interval is the last 30 minutes. |
+
+The M1 simulator keeps every frame in its named volume, including the original payload, delivery status and attempt metadata. It retries the oldest pending frame with delays of 1, 2, 4, 8 and then 15 seconds. A failed upload stays pending and can hold up newer uploads while sampling continues. Retry classification and quarantine are scheduled for M3. M1 receipts carry a null assessment ID. Assessment and alert behavior starts in M2.
+
+## Verify M1
+
+Run these commands against the started stack. Backend integration tests migrate a temporary database on the Compose PostgreSQL service. The browser check needs Microsoft Edge and restarts the app. It compares the IDs on all three rendered cards with the SQLite payloads and the PostgreSQL-backed history before and after restart.
+
+```powershell
+docker compose exec -T app python -m pytest -q
+docker compose exec -T simulator python -m unittest simulator.test_buffer
+docker compose exec -T app alembic current
+.\scripts\test-monitoring.ps1
+```
+
+To regenerate the checked-in frontend types when the API changes, run the following from the repository root with a running app and Node/npm available.
+
+```powershell
+npx --yes openapi-typescript@7.10.1 http://127.0.0.1:8010/openapi.json -o frontend/src/api/schema.d.ts
+```
 
 ## M0 contracts
 

@@ -4,11 +4,11 @@ Updated 2026-11-06. Read [AGENTS.md](../AGENTS.md) before work. The approved beh
 
 ## Current state
 
-M0 is complete. The local environment serves a React shell from FastAPI, checks PostgreSQL availability and migration state, and publishes the health API contract. See the [startup and verification commands](../README.md). The user authorized M0 only. M1 awaits a separate request.
+M0 and M1 are complete. A local simulator samples three fictional adults every five seconds, commits frames to SQLite, and uploads them to FastAPI. The React dashboard polls PostgreSQL-backed readings. See the [startup and verification commands](../README.md). This session authorized M1 and requested an uncommitted handoff. M2 awaits a separate request.
 
 The workspace was empty when documentation creation began. During planning on 2026-11-05, Python and Node were absent from the inspected shell PATH. Docker CLI was present, its daemon was unreachable, and its user configuration could not be read in that session. Recheck these observations during M0. They do not establish the machine's permanent configuration.
 
-The M0 evidence below covers startup, migrations, health responses, and browser rendering. The monitoring and recovery experiments assigned to M1–M7 remain pending.
+The M0 and M1 sections record executed checks. Assessment, alert response and the full failure-recovery experiments remain scheduled for M2–M7.
 
 ## Budget and priorities
 
@@ -19,7 +19,7 @@ P1, after P0 passes, includes a compact reliability export, connection-gap visua
 | Milestone | Hours | Cumulative | Status |
 |---|---:|---:|---|
 | M0 Environment and contracts | 3 | 3 | Complete |
-| M1 Durable monitoring vertical slice | 6 | 9 | Pending |
+| M1 Durable monitoring vertical slice | 6 | 9 | Complete |
 | M2 Explained alerts and acknowledgement | 6 | 15 | Pending |
 | M3 Failure recovery and data quality | 7 | 22 | Pending |
 | M4 Historical trends and observations | 5 | 27 | Pending |
@@ -62,13 +62,26 @@ The [README](../README.md#m0-contracts) records M0 requests, responses and repea
 
 Depends on M0. Implement patient/device/reading storage, seeds, simulator SQLite buffering and basic retries, ingestion, patient queries, and a polling dashboard. Likely areas are simulator generation/buffer/upload, backend models/ingestion, and frontend patient view.
 
-- [ ] Generated frames commit locally before upload.
-- [ ] Frames reach PostgreSQL and appear in the browser.
-- [ ] Identical retries create one reading.
-- [ ] Accepted data survives application restart.
-- [ ] The working single-patient path extends to all three seeded patients.
+- [x] Generated frames commit locally before upload.
+- [x] Frames reach PostgreSQL and appear in the browser.
+- [x] Identical retries create one reading.
+- [x] Accepted data survives application restart.
+- [x] The working single-patient path extends to all three seeded patients.
 
 Test validation, duplicate ingestion, repeatable migrations/seeds, and simulator-payload-to-query integration. Demonstrate actual generated database-backed readings. Done requires the common gate and a working end-to-end monitoring path.
+
+**Verification on 2026-11-06.** The app reused the M0 PostgreSQL volume and health routes. A separate named volume holds simulator frames. All commands ran from the repository root.
+
+| Check run | Observed result |
+|---|---|
+| `docker compose config -q` and `docker compose up --build --wait --wait-timeout 120` | Configuration passed. TypeScript and the production Vite build passed. All three services started. |
+| `docker compose exec -T app alembic current` | Reported `0002_monitoring (head)` on the upgraded M0 database. |
+| `docker compose exec -T app python -m pytest -q` | 19 passed, including all three M0 checks. A disposable PostgreSQL database went through upgrade, downgrade to M0, upgrade and a repeated upgrade. Tests exercised both caregivers, all three devices, validation, key enforcement, nullable readings and paginated history. Four concurrent copies produced one 201 and three 200 responses with one stored row. Conflicting payloads, sequences and IDs returned 409. The test client emitted one dependency deprecation warning. |
+| `docker compose exec -T simulator python -m unittest simulator.test_buffer` | 1 passed. A separate connection reopened the committed pending frame. A simulated upload failure preserved it, delayed the retry, then resent identical bytes. A matching duplicate receipt marked it accepted. The next generated frame advanced the sequence. |
+| `./scripts/test-monitoring.ps1` | Headless Edge rendered real heart rates and reading IDs for Mira Shah (`7edb8f3c-7d28-4b37-9b95-88ff4e3a0727`), Jon Ellis (`7419b5e3-21cb-48f1-8ac1-c5cc369ef771`) and Lena Park (`7ab5e6f6-ef62-42a4-84eb-02bab1a790bc`). For each ID, the accepted SQLite payload matched the patient history query. After a real app restart each ID still appeared once with its original receipt timestamp. |
+| `./scripts/test-readiness.ps1` | M0 regression passed. Readiness returned 200 before stopping PostgreSQL, then 503 during the outage while liveness returned 200. Readiness returned 200 after restoring PostgreSQL. |
+
+Commit omitted at the user's request. M1 has no open acceptance items. M2 assessments and the M3 failure matrix remain pending.
 
 ### M2 — Explained alerts and acknowledgement
 
@@ -198,5 +211,7 @@ Spend contingency on setup, integration defects, performance, and rehearsal. Sim
 M0 structure follow-up: separated health routes from FastAPI startup and the environment screen from React startup. `docker compose up --build --wait --wait-timeout 120` passed, including strict TypeScript and the production bundle. `docker compose exec -T app python -m pytest -q` passed all three tests. `./scripts/test-readiness.ps1` verified readiness 200 → 503 → 200 across a PostgreSQL stop and restart. M0 remains complete.
 
 M0 layout revision: extracted API routes, readiness services, response models and database configuration into backend packages. Separated frontend API access, pages and styles. Repeated the Compose build, pytest and outage script above against the revised layout. Both services started healthy, all three tests passed, and readiness recovered after restarting PostgreSQL. See the [project layout](../README.md#project-layout).
+
+**2026-11-06 — M1 handoff.** Durable monitoring for all three synthetic patients passed the checks above. Startup and rerun instructions are in the [README](../README.md#verify-m1). No open M1 blockers. Changes are uncommitted as requested. Await authorization before starting M2.
 
 Future entries should include milestone status, actual commands/results, outstanding issues, and the next authorized action. Preserve historical observations rather than silently rewriting them as current facts.
