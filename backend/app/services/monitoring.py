@@ -6,13 +6,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from app.models.monitoring import PatientSnapshot, ReadingInput, ReadingPage, Receipt, StoredReading
-
-
-class MonitoringError(Exception):
-    def __init__(self, status: int, code: str, message: str) -> None:
-        super().__init__(message)
-        self.status = status
-        self.code = code
+from app.services.alerts import assess_reading
+from app.services.errors import MonitoringError
 
 
 async def ingest(engine: AsyncEngine, reading: ReadingInput) -> Receipt:
@@ -39,26 +34,32 @@ async def ingest(engine: AsyncEngine, reading: ReadingInput) -> Receipt:
             """), values)
             if received is None:
                 raise MonitoringError(409, "identity_conflict", "Reading ID or sequence already used.")
+            assessment_id = await conn.scalar(
+                text("SELECT id FROM assessments WHERE reading_id = :reading_id"), values)
             disposition = "duplicate"
         else:
-            await conn.execute(text("""
+            newest = await conn.scalar(text("""
                 UPDATE patients SET latest_reading_id = :reading_id
                 WHERE id = :patient_id AND (latest_reading_id IS NULL OR EXISTS (
                     SELECT 1 FROM readings WHERE id = latest_reading_id
                     AND (observed_at, id) < (:observed_at, :reading_id)
-                ))
+                )) RETURNING id
             """), values)
+            assessment_id = await assess_reading(conn, reading, patient_id, received, newest is not None)
             disposition = "accepted"
-    return Receipt(reading_id=reading.reading_id, received_at=received, disposition=disposition)
+    return Receipt(reading_id=reading.reading_id, received_at=received, disposition=disposition,
+                   assessment_id=assessment_id)
 
 
 async def snapshots(conn: AsyncConnection, patient_id: UUID | None = None) -> list[PatientSnapshot]:
     query = """
         SELECT to_jsonb(p) || jsonb_build_object('device_id', d.id) AS patient,
                CASE WHEN r.id IS NOT NULL THEN (to_jsonb(r) - 'payload_hash' - 'id')
-                    || jsonb_build_object('reading_id', r.id) END AS latest_reading
+                    || jsonb_build_object('reading_id', r.id) END AS latest_reading,
+               to_jsonb(a) AS current_assessment
         FROM patients p JOIN devices d ON d.patient_id = p.id
         LEFT JOIN readings r ON r.id = p.latest_reading_id
+        LEFT JOIN assessments a ON a.id = p.current_assessment_id
     """
     if patient_id is not None:
         query += " WHERE p.id = :patient_id"

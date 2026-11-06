@@ -24,6 +24,11 @@ def initialize(connection: sqlite3.Connection) -> None:
             last_error TEXT, UNIQUE (device_id, sequence)
         );
         CREATE INDEX IF NOT EXISTS pending_frames ON frames(status);
+        CREATE TABLE IF NOT EXISTS alert_demo (
+            device_id TEXT PRIMARY KEY, first_sequence INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS demo_rotation (singleton INTEGER PRIMARY KEY CHECK(singleton=1), next_index INTEGER NOT NULL);
+        INSERT OR IGNORE INTO demo_rotation VALUES (1, 0);
     """)
 
 
@@ -41,6 +46,13 @@ def generate(connection: sqlite3.Connection, device_id: UUID, observed: datetime
             "spo2_pct": 96 + variation % 3, "systolic_mmhg": 115 + variation,
             "diastolic_mmhg": 75 + variation, "temperature_c": 36.5 + variation / 10,
         }
+        demo = connection.execute("SELECT first_sequence FROM alert_demo WHERE device_id = ?",
+                                  (str(device_id),)).fetchone()
+        if demo is not None:
+            offset = sequence - demo["first_sequence"]
+            frame["spo2_pct"] = 93 if offset < 3 else 88
+            if offset >= 5:
+                connection.execute("DELETE FROM alert_demo WHERE device_id = ?", (str(device_id),))
         connection.execute("""
             INSERT INTO frames (reading_id, device_id, sequence, payload) VALUES (?, ?, ?, ?)
         """, (reading_id, str(device_id), sequence, json.dumps(frame)))

@@ -106,10 +106,231 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/alerts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Alerts */
+        get: operations["alerts_api_v1_alerts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/alerts/{alert_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Detail */
+        get: operations["detail_api_v1_alerts__alert_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/alerts/{alert_id}/acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Acknowledge Alert */
+        post: operations["acknowledge_alert_api_v1_alerts__alert_id__acknowledge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** Acknowledge */
+        Acknowledge: {
+            /**
+             * Command Id
+             * Format: uuid
+             */
+            command_id: string;
+        };
+        /** Alert */
+        Alert: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Patient Id
+             * Format: uuid
+             */
+            patient_id: string;
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "risk";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "open" | "acknowledged";
+            /**
+             * Peak Priority
+             * @enum {string}
+             */
+            peak_priority: "watch" | "high";
+            /**
+             * Assignee Id
+             * Format: uuid
+             */
+            assignee_id: string;
+            /**
+             * Opened At
+             * Format: date-time
+             */
+            opened_at: string;
+            /** Acknowledged At */
+            acknowledged_at: string | null;
+            /** Acknowledged By */
+            acknowledged_by: string | null;
+            original_assessment: components["schemas"]["Assessment"];
+            latest_assessment: components["schemas"]["Assessment"];
+            /** Revision */
+            revision: number;
+        };
+        /** AlertDetail */
+        AlertDetail: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Patient Id
+             * Format: uuid
+             */
+            patient_id: string;
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "risk";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "open" | "acknowledged";
+            /**
+             * Peak Priority
+             * @enum {string}
+             */
+            peak_priority: "watch" | "high";
+            /**
+             * Assignee Id
+             * Format: uuid
+             */
+            assignee_id: string;
+            /**
+             * Opened At
+             * Format: date-time
+             */
+            opened_at: string;
+            /** Acknowledged At */
+            acknowledged_at: string | null;
+            /** Acknowledged By */
+            acknowledged_by: string | null;
+            original_assessment: components["schemas"]["Assessment"];
+            latest_assessment: components["schemas"]["Assessment"];
+            /** Revision */
+            revision: number;
+            /** Events */
+            events: components["schemas"]["AlertEvent"][];
+        };
+        /** AlertEvent */
+        AlertEvent: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Event Type
+             * @enum {string}
+             */
+            event_type: "opened" | "updated" | "acknowledged" | "reopened" | "escalated";
+            /** Assessment Id */
+            assessment_id: string | null;
+            /** Caregiver Id */
+            caregiver_id: string | null;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+        };
+        /** AlertPage */
+        AlertPage: {
+            /** Items */
+            items: components["schemas"]["Alert"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** Assessment */
+        Assessment: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Patient Id
+             * Format: uuid
+             */
+            patient_id: string;
+            /**
+             * Reading Id
+             * Format: uuid
+             */
+            reading_id: string;
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "current" | "historical";
+            /** Concern */
+            concern: ("none" | "watch" | "high") | null;
+            /**
+             * Data Quality
+             * @enum {string}
+             */
+            data_quality: "fresh" | "incomplete";
+            /**
+             * Evaluated At
+             * Format: date-time
+             */
+            evaluated_at: string;
+            /** Rule Version */
+            rule_version: string;
+            /** Findings */
+            findings: components["schemas"]["Finding"][];
+        };
         /** Caregiver */
         Caregiver: {
             /**
@@ -131,6 +352,8 @@ export interface components {
             caregivers: components["schemas"]["Caregiver"][];
             /** Patients */
             patients: components["schemas"]["PatientSnapshot"][];
+            /** Active Alerts */
+            active_alerts: components["schemas"]["Alert"][];
         };
         /** ErrorEnvelope */
         ErrorEnvelope: {
@@ -151,6 +374,34 @@ export interface components {
             details: {
                 [key: string]: string;
             };
+        };
+        /** Finding */
+        Finding: {
+            /** Rule Id */
+            rule_id: string;
+            /**
+             * Priority
+             * @enum {string}
+             */
+            priority: "watch" | "high";
+            /** Metric */
+            metric: string;
+            /** Value */
+            value: number;
+            /** Unit */
+            unit: string;
+            /** Condition */
+            condition: string;
+            /**
+             * Reading Id
+             * Format: uuid
+             */
+            reading_id: string;
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
         };
         /** HealthError */
         HealthError: {
@@ -204,6 +455,7 @@ export interface components {
         PatientSnapshot: {
             patient: components["schemas"]["Patient"];
             latest_reading: components["schemas"]["StoredReading"] | null;
+            current_assessment: components["schemas"]["Assessment"] | null;
         };
         /** Readiness */
         Readiness: {
@@ -283,7 +535,7 @@ export interface components {
              */
             received_at: string;
             /** Assessment Id */
-            assessment_id?: null;
+            assessment_id: string | null;
         };
         /** StoredReading */
         StoredReading: {
@@ -593,6 +845,172 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    alerts_api_v1_alerts_get: {
+        parameters: {
+            query?: {
+                patient_id?: string | null;
+                assignee_id?: string | null;
+                status?: ("open" | "acknowledged") | null;
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertPage"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    detail_api_v1_alerts__alert_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alert_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertDetail"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    acknowledge_alert_api_v1_alerts__alert_id__acknowledge_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "x-demo-caregiver-id": string;
+            };
+            path: {
+                alert_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Acknowledge"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Alert"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

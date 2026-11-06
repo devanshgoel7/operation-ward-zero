@@ -14,7 +14,9 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.models.monitoring import Caregiver, Dashboard, PatientSnapshot, ReadingInput, ReadingPage, Receipt
-from app.services.monitoring import MonitoringError, history, ingest, snapshots
+from app.services.alerts import list_alerts
+from app.services.errors import MonitoringError
+from app.services.monitoring import history, ingest, snapshots
 
 
 class ErrorInfo(BaseModel):
@@ -71,6 +73,7 @@ async def dashboard(request: Request) -> Dashboard:
     async with request.app.state.engine.connect() as conn:
         caregivers = await conn.execute(text("SELECT id, display_name FROM caregivers ORDER BY id"))
         return Dashboard(server_time=datetime.now(UTC), patients=await snapshots(conn),
+                         active_alerts=(await list_alerts(conn)).items,
                          caregivers=[Caregiver.model_validate(row) for row in caregivers.mappings()])
 
 

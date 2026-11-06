@@ -4,11 +4,11 @@ Updated 2026-11-06. Read [AGENTS.md](../AGENTS.md) before work. The approved beh
 
 ## Current state
 
-M0 and M1 are complete. A local simulator samples three fictional adults every five seconds, commits frames to SQLite, and uploads them to FastAPI. The React dashboard polls PostgreSQL-backed readings. See the [startup and verification commands](../README.md). This session authorized M1 and requested an uncommitted handoff. M2 awaits a separate request.
+M0, M1 and M2 are complete. A local simulator samples three fictional adults every five seconds, commits frames to SQLite, and uploads them to FastAPI. PostgreSQL saves threshold assessments, risk episodes and caregiver acknowledgements. The polling dashboard displays readings, explanations, and the assigned caregiver's response. This session authorized M2 and an uncommitted handoff. See the [M2 walkthrough](../README.md#verify-m2).
 
 The workspace was empty when documentation creation began. During planning on 2026-11-05, Python and Node were absent from the inspected shell PATH. Docker CLI was present, its daemon was unreachable, and its user configuration could not be read in that session. Recheck these observations during M0. They do not establish the machine's permanent configuration.
 
-The M0 and M1 sections record executed checks. Assessment, alert response and the full failure-recovery experiments remain scheduled for M2–M7.
+The M0–M2 sections record executed checks. The full failure-recovery matrix and later lifecycle work remain scheduled for subsequent milestones.
 
 ## Budget and priorities
 
@@ -20,10 +20,10 @@ P1, after P0 passes, includes a compact reliability export, connection-gap visua
 |---|---:|---:|---|
 | M0 Environment and contracts | 3 | 3 | Complete |
 | M1 Durable monitoring vertical slice | 6 | 9 | Complete |
-| M2 Explained alerts and acknowledgement | 6 | 15 | Pending |
+| M2 Explained alerts and acknowledgement | 6 | 15 | Complete |
 | M3 Failure recovery and data quality | 7 | 22 | Pending |
 | M4 Historical trends and observations | 5 | 27 | Pending |
-| M5 Escalation and lifecycle completion | 4 | 31 | Pending |
+| M5 Escalation and lifecycle completion | 4 | 31 | Partial — requested caregiver handoff implemented; full lifecycle gate pending |
 | M6 Real-time dashboard polish | 5 | 36 | Pending |
 | M7 Full verification and submission | 4 | 40 | Pending |
 | Contingency | 8 | 48 | Reserved |
@@ -87,13 +87,24 @@ Commit omitted at the user's request. M1 has no open acceptance items. M2 assess
 
 Depends on M1. Implement thresholds, assessments, episodes, events, primary assignment, acknowledgement, and explanation UI. Likely areas are risk, alerts, migrations, and the frontend alert panel.
 
-- [ ] Abnormal input creates one explained alert.
-- [ ] Repeated abnormal readings update the episode.
-- [ ] Acknowledgement persists and retries safely.
-- [ ] Failed transactions preserve atomicity across reading and alert effects.
-- [ ] Incomplete high readings still raise concern.
+- [x] Abnormal input creates one explained alert.
+- [x] Repeated abnormal readings update the episode.
+- [x] Acknowledgement persists and retries safely.
+- [x] Failed transactions preserve atomicity across reading and alert effects.
+- [x] Incomplete high readings still raise concern.
 
 Test threshold boundaries, mixed priorities, incomplete inputs, rollback, duplicate effects, and command retries. Demonstrate concern → explanation → acknowledgement. Done requires the common gate and the complete basic response workflow.
+
+**Verification on 2026-11-06.** M2 extends the M1 patient lock and transaction. The migration preserves existing readings. Each new reading has one immutable threshold assessment. The newest eligible reading can open or update the patient's risk episode. Late or out-of-order frames receive historical assessments. Delayed-review episodes and periodic freshness checks belong to M3.
+
+| Check run | Observed result |
+|---|---|
+| `docker compose up --build --wait --wait-timeout 120` and `docker compose exec -T app alembic current` | The populated M1 stack upgraded to `0003_explained_alerts (head)`. Strict TypeScript and the Vite production build passed. All three services started. |
+| `docker compose exec -T app python -m pytest -q` | 41 passed, including 18 strict boundary cases, mixed priorities, incomplete inputs, peak and opening evidence, receipt and command retries, and M0/M1 regressions. One existing TestClient dependency deprecation warning. A populated M1 migration fixture replayed successfully with its original receipt time and null assessment ID. |
+| PostgreSQL failure and concurrency checks in the same suite | A constraint rejected the final audit insert. Ingestion returned 503 and rolled back the reading, assessment, patient pointers, and alert. Retrying after removing the constraint created one episode. Four concurrent copies of a watch reading created one assessment and one opening event. Three concurrent acknowledgements with one command produced one acknowledgement event. |
+| `./scripts/start-alert-demo.ps1` and headless Edge via Playwright | The isolated dashboard displayed Mira Shah's 93% opening SpO₂ and 88% high finding on an incomplete frame. Switching caregivers disabled acknowledgement for Sam Rivera and enabled it for Alex Morgan. Clicking as Alex and reloading showed the saved acknowledgement. |
+| `docker compose -p wardzero-m2-demo restart app` and GET alert detail after readiness | Alert `fe4e1547-4772-4629-9500-73dc793fb0d8` retained revision 3, both evidence snapshots, the acknowledgement timestamp and the same three events in order (opened, updated, acknowledged). |
+| `docker compose exec -T simulator python -m unittest simulator.test_buffer`, `./scripts/test-monitoring.ps1`, and `./scripts/test-readiness.ps1` | The buffer test passed. All three rendered readings matched SQLite and server history across an app restart. Readiness returned 200 → 503 → 200 across the database stop and restart, with liveness 200 during the outage. |
 
 ### M3 — Failure recovery and data quality
 
@@ -214,4 +225,12 @@ M0 layout revision: extracted API routes, readiness services, response models an
 
 **2026-11-06 — M1 handoff.** Durable monitoring for all three synthetic patients passed the checks above. Startup and rerun instructions are in the [README](../README.md#verify-m1). No open M1 blockers. Changes are uncommitted as requested. Await authorization before starting M2.
 
+**2026-11-06 — M2 handoff.** All five acceptance items passed. The [walkthrough](../README.md#verify-m2) reproduces the explanation and acknowledgement in a separate Compose project. No open M2 blockers. Changes are uncommitted at the user's request. M3 awaits separate authorization.
+
 Future entries should include milestone status, actual commands/results, outstanding issues, and the next authorized action. Preserve historical observations rather than silently rewriting them as current facts.
+
+**M2 live demonstration follow-up.** The [live walkthrough](../README.md#verify-m2) now uses the main dashboard and an on-demand simulator command. Rebuilt the simulator with `docker compose up --build -d --wait simulator`. Both tests passed with `docker compose exec -T simulator python -m unittest simulator.test_buffer`. In a disposable three-service Compose project, Edge showed the baseline, then Watch and High on Mira's card and alert after `docker compose exec -T simulator python -m simulator.trigger_alert`. All three patients advanced to new reading IDs, Mira returned to baseline, and one episode remained. The presentation stack on port 8010 was checked separately with all three readings present and zero active alerts. M3 remains pending.
+
+**Live caregiver handoff follow-up.** The requested demo rotation, persisted deadlines, backup assignment and renewed acknowledgement are implemented on the main stack. Docker Compose rebuilt successfully. The app pytest suite passed 42 tests, including a real PostgreSQL deadline made due and processed by the running worker, primary rejection after reassignment, backup acknowledgement, and reopening following recovery. All three simulator tests passed, including Mira → Aryan → Lena → Mira across command invocations. Full M5 verification, resolution and broader recovery testing remain pending. Work is uncommitted.
+
+**Caregiver inbox follow-up.** Filtered the polling dashboard by the selected caregiver's current assignments. The Compose build passed strict TypeScript and Vite. In Edge, a simulated reassignment in the dashboard response moved the alert into Sam's selected inbox on polling and out of Alex's inbox. The prior PostgreSQL worker test covers the actual deadline transition.

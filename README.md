@@ -64,7 +64,43 @@ The [running OpenAPI contract](http://127.0.0.1:8010/docs) lists fields, units a
 | `GET /api/v1/patients/{patient_id}` | Returns the registered patient, device and latest reading by observation time. |
 | `GET /api/v1/patients/{patient_id}/readings` | Returns newest-first history. Use timezone-aware `from` and `to`, a `limit` (default 500, maximum 2,000) and the returned `next_cursor`. The default interval is the last 30 minutes. |
 
-The M1 simulator keeps every frame in its named volume, including the original payload, delivery status and attempt metadata. It retries the oldest pending frame with delays of 1, 2, 4, 8 and then 15 seconds. A failed upload stays pending and can hold up newer uploads while sampling continues. Retry classification and quarantine are scheduled for M3. M1 receipts carry a null assessment ID. Assessment and alert behavior starts in M2.
+The M1 simulator keeps every frame in its named volume, including the original payload, delivery status and attempt metadata. It retries the oldest pending frame with delays of 1, 2, 4, 8 and then 15 seconds. A failed upload stays pending and can hold up newer uploads while sampling continues. Retry classification and quarantine are scheduled for M3.
+
+## Verify M2
+
+Run `docker compose exec -T app python -m pytest -q` against the started stack. For the live presentation, open the [monitoring dashboard](http://127.0.0.1:8010/) and leave it open. From the repository root, run:
+
+```powershell
+docker compose exec -T simulator python -m simulator.trigger_alert
+```
+
+On Mira's next three samples her simulated SpO₂ is 93% (Watch), followed by three at 88% (High). Each phase lasts about 15 seconds. The usual uploader sends each saved frame and the dashboard polls every five seconds. Show the latest alert evidence, then acknowledge as Alex Morgan. Sampling returns to baseline automatically, while the alert retains its peak and acknowledgement history.
+
+Without an argument, successive commands rotate through Mira, Aryan, Lena, then Mira again. The simulator saves the next patient in SQLite. Pass `mira`, `aryan`, or `lena` to target a patient explicitly. Each successful trigger advances to the following patient.
+
+To show escalation, leave Alex's alert unanswered. Watch allows 60 seconds. High shortens the remaining wait to at most 30 seconds. With this scenario Sam typically takes over about 45–50 seconds after the first Watch reading. Select Sam in the caregiver dropdown to acknowledge. Acknowledging cancels the deadline. New concern after a complete baseline reading, or a rise from Watch to High, reopens an acknowledged episode under Alex and preserves the previous response in history.
+
+### Optional isolated M2 fixture
+
+To inspect a pre-seeded episode separately, run:
+
+```powershell
+.\scripts\start-alert-demo.ps1
+```
+
+The script starts the separate `wardzero-m2-demo` Compose project on loopback port 8012 and posts two synthetic readings through the sensor API. Its database is separate from the regular simulator and patient history. To use another port, pass `-Port`.
+
+1. Open the [M2 dashboard](http://127.0.0.1:8012/). Mira Shah's risk alert shows SpO₂ of 88%, the high threshold of <90%, the reading ID, and observation time. The missing temperature appears as incomplete data.
+2. Expand **Opening evidence** to see the earlier 93% reading that crossed the watch threshold of <94%.
+3. Select Alex Morgan in **Caregiver inbox** to see the alert while it is assigned to him. After escalation, select Sam Rivera to see it in his inbox. Click **Acknowledge** as the current assignee and reload to see the saved actor and time.
+
+Rerunning the script reuses the saved episode. Stop the isolated environment with `docker compose -p wardzero-m2-demo down`. To deliberately **erase only the M2 demo data** for a fresh walkthrough, use `docker compose -p wardzero-m2-demo down --volumes` and rerun the script.
+
+### M2 contracts
+
+- New reading receipts include the assessment ID after the database commits. Identical retries return that same ID. Replays of readings originally stored by M1 retain their original receipt time and null assessment ID.
+- The dashboard includes current assessments and active risk alerts. Each alert retains its opening assessment, latest triggering assessment, and peak priority. Findings include the demo rule ID/version, measurement, unit, condition, reading ID, and observation time. A partial reading with a breach can trigger an alert. A partial reading without a breach has null concern.
+- `GET /api/v1/alerts` supports patient, assignee and status filters, plus cursor pagination. `GET /api/v1/alerts/{id}` adds chronological events. `POST /api/v1/alerts/{id}/acknowledge` accepts a UUID `command_id` and an `X-Demo-Caregiver-Id` header. Retrying the same command returns the stored alert with one acknowledgement event. Another caregiver receives 403. Reusing the command for another alert or sending a new command to an acknowledged alert returns 409.
 
 ## Verify M1
 

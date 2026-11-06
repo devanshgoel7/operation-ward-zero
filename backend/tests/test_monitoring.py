@@ -1,56 +1,13 @@
 """Exercise the HTTP contract against a disposable database on the real Compose PostgreSQL."""
 
-import asyncio
-import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from alembic import command
-from alembic.config import Config
 from fastapi.testclient import TestClient
-from sqlalchemy import text
 
-from app.core.database import create_engine
-from app.main import app
-
-
-async def database_command(sql: str) -> None:
-    engine = create_engine()
-    try:
-        async with engine.connect() as connection:
-            connection = await connection.execution_options(isolation_level="AUTOCOMMIT")
-            await connection.execute(text(sql))
-    finally:
-        await engine.dispose()
-
-
-@pytest.fixture(scope="module")
-def client():
-    name = f"m1_test_{uuid4().hex}"
-    asyncio.run(database_command(f"CREATE DATABASE {name}"))
-    try:
-        with pytest.MonkeyPatch.context() as env:
-            env.setenv("POSTGRES_DB", name)
-            config = Config("alembic.ini")
-            command.upgrade(config, "head")
-            command.downgrade(config, "0001_environment")
-            command.upgrade(config, "head")
-            command.upgrade(config, "head")
-            with TestClient(app, headers={"X-Simulator-Key": os.environ["SIMULATOR_KEY"]}) as http:
-                yield http
-    finally:
-        asyncio.run(database_command(f"DROP DATABASE {name}"))
-
-
-def frame(sequence: int = 1) -> dict:
-    return {
-        "reading_id": str(uuid4()), "device_id": "30000000-0000-0000-0000-000000000001",
-        "sequence": sequence, "observed_at": datetime.now(UTC).isoformat(),
-        "heart_rate_bpm": 73, "spo2_pct": 99, "systolic_mmhg": 119, "diastolic_mmhg": 79,
-        "temperature_c": 36.7,
-    }
+from conftest import frame
 
 
 def test_repeatable_seeds_and_three_patient_path(client: TestClient) -> None:

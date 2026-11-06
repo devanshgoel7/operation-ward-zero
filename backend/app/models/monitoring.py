@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
+from app.models.alerts import Alert, Assessment
+
 
 class Reading(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
@@ -44,7 +46,7 @@ class Receipt(BaseModel):
     reading_id: UUID
     disposition: Literal["accepted", "duplicate"]
     received_at: AwareDatetime
-    assessment_id: None = None
+    assessment_id: UUID | None
 
 
 class Caregiver(BaseModel):
@@ -63,12 +65,14 @@ class Patient(BaseModel):
 class PatientSnapshot(BaseModel):
     patient: Patient
     latest_reading: StoredReading | None
+    current_assessment: Assessment | None
 
 
 class Dashboard(BaseModel):
     server_time: AwareDatetime
     caregivers: list[Caregiver]
     patients: list[PatientSnapshot]
+    active_alerts: list[Alert]
 
 
 class ReadingPage(BaseModel):

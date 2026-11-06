@@ -54,3 +54,22 @@ small { font-size: .8rem; font-weight: normal; }
 footer { margin-top: 2.25rem; }
 footer section { margin-top: .75rem; }
 footer h3 { margin: 0; font-size: 1rem; }
+.assessment { font-weight: 600; }
+.assessment::first-letter, .episode-heading span::first-letter { text-transform: uppercase; }
+.risk-panel { display: block; margin-top: 1.5rem; }
+.episode-heading { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: .75rem; }
+.risk-panel select, .risk-panel button { font: inherit; border: 1px solid #728b82; border-radius: .3rem; padding: .45rem .75rem; }
+.episode { margin-top: 1rem; border-top-color: #a87326; }
+.episode[data-priority="high"] { border-top-color: #a4493e; }
+.episode h3, .episode h4 { margin: 0; }
+.episode h4, .episode details, .episode button { margin-top: 1rem; }
+.episode button { background: #205e53; color: white; cursor: pointer; }
+.episode button:disabled { background: #e4eae7; color: #485b54; cursor: default; }
+.episode summary { cursor: pointer; }
+.findings { padding-left: 1.25rem; margin: .5rem 0; }
+.findings li + li { margin-top: .4rem; }
+.source { display: block; overflow-wrap: anywhere; }
+.severity { display: inline-block; padding: .2rem .65rem; border-radius: 1rem; font-size: .85rem; font-weight: 700; text-transform: uppercase; }
+.severity[data-level="watch"] { background: #fff0cb; color: #714400; }
+.severity[data-level="high"] { background: #ffe4df; color: #872b20; }
+.patients .severity { margin-top: .55rem; }
