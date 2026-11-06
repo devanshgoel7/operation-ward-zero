@@ -195,4 +195,8 @@ Spend contingency on setup, integration defects, performance, and rehearsal. Sim
 | 2026-11-06 | Persistent documentation baseline | Four requested Markdown documents created. Application milestones pending. Next implementation step is M0 when requested. |
 | 2026-11-06 | M0 environment and contracts complete | Docker Desktop started and Git initialized with user approval. All five M0 criteria verified above. App and database left healthy. No open M0 blockers. Await authorization for M1. |
 
+M0 structure follow-up: separated health routes from FastAPI startup and the environment screen from React startup. `docker compose up --build --wait --wait-timeout 120` passed, including strict TypeScript and the production bundle. `docker compose exec -T app python -m pytest -q` passed all three tests. `./scripts/test-readiness.ps1` verified readiness 200 → 503 → 200 across a PostgreSQL stop and restart. M0 remains complete.
+
+M0 layout revision: extracted API routes, readiness services, response models and database configuration into backend packages. Separated frontend API access, pages and styles. Repeated the Compose build, pytest and outage script above against the revised layout. Both services started healthy, all three tests passed, and readiness recovered after restarting PostgreSQL. See the [project layout](../README.md#project-layout).
+
 Future entries should include milestone status, actual commands/results, outstanding issues, and the next authorized action. Preserve historical observations rather than silently rewriting them as current facts.

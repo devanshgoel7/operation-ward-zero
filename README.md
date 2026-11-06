@@ -2,6 +2,29 @@
 
 M0 provides a local React environment screen, a FastAPI service and a persistent PostgreSQL database. The screen polls service readiness every 15 seconds. The synthetic patient monitoring workflow starts in M1.
 
+## Project layout
+
+The M0 source layout groups files by responsibility:
+
+```text
+backend/
+  app/
+    main.py                    FastAPI startup, router registration, static shell
+    api/health.py              HTTP routes and status codes
+    services/health.py         Database and migration readiness checks
+    models/health.py           Typed health response contracts
+    core/database.py           Shared SQLAlchemy engine configuration
+  migrations/                  Alembic runner and schema revisions
+  tests/                       Backend integration checks
+frontend/src/
+  main.tsx                     React startup and query provider
+  api/health.ts                Readiness request
+  pages/EnvironmentStatus.tsx  Environment screen
+  styles/global.css            Shell styles
+scripts/                       Operational verification
+docs/                          Architecture, decisions and milestone evidence
+```
+
 ## Start the environment
 
 Use PowerShell from the repository root with Docker Desktop running in Linux container mode. The first build needs network access. Docker supplies Python and Node.

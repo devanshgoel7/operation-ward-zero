@@ -3,7 +3,7 @@ import asyncio
 from alembic import context
 from sqlalchemy.engine import Connection
 
-from app.db import create_engine
+from app.core.database import create_engine
 
 
 def migrate(connection: Connection) -> None:

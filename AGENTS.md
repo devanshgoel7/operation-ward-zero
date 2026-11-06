@@ -58,6 +58,11 @@ Bind published application ports to loopback. Keep simulator keys out of the fro
 
 ## Repository conventions
 
+- Keep backend runtime code in `backend/app/`, schema revisions in `backend/migrations/versions/`, and backend tests in `backend/tests/`. Keep browser code in `frontend/src/` and repository-level operational commands in `scripts/`.
+- **YAGNI:** Add a directory, dependency, or interface when a feature in the authorized milestone needs it.
+- **KISS:** Start with a direct implementation in the module that owns the behavior. Split a module when its responsibilities need to change or be tested independently.
+- **DRY:** Keep each business rule and validation contract in one authoritative place. Extract shared code when callers depend on the same behavior and should change together.
+
 The planned application areas are backend/, frontend/, simulator/, config/, scripts/, and tests/e2e/. Create them incrementally with their milestones. The four persistent documents already define the baseline. Add README, API/database references, and a demo runbook as their implementation makes them useful.
 
 Avoid microservices, Kubernetes, Kafka, Redis, generic internal message buses, and event-sourcing infrastructure for this scope. Favor direct modules and database transactions.
