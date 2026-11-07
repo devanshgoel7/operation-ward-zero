@@ -1,7 +1,7 @@
 from typing import Literal
 from uuid import UUID
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
 from app.models.observations import Observation
 
@@ -75,6 +75,12 @@ class Alert(BaseModel):
     acknowledged_at: AwareDatetime | None
     acknowledged_by: UUID | None
     resolved_at: AwareDatetime | None
+    resolved_by: UUID | None
+    escalation_due_at: AwareDatetime | None
+    escalated_at: AwareDatetime | None
+    response_started_at: AwareDatetime
+    recovery_count: int
+    recovery_observed_at: AwareDatetime | None
     original_assessment: Assessment | None
     latest_assessment: Assessment | None
     revision: int
@@ -86,6 +92,7 @@ class AlertEvent(BaseModel):
     assessment_id: UUID | None
     caregiver_id: UUID | None
     occurred_at: AwareDatetime
+    details: dict[str, str | float | None]
 
 
 class AlertDetail(Alert):
@@ -100,3 +107,14 @@ class AlertPage(BaseModel):
 class Acknowledge(BaseModel):
     model_config = ConfigDict(extra="forbid")
     command_id: UUID
+
+
+class Resolve(Acknowledge):
+    note: str = Field(min_length=1, max_length=500)
+
+    @field_validator("note")
+    @classmethod
+    def nonblank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("A resolution note is required.")
+        return value

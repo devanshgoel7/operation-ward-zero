@@ -157,6 +157,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/alerts/{alert_id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve Alert */
+        post: operations["resolve_alert_api_v1_alerts__alert_id__resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/patients/{patient_id}/observations": {
         parameters: {
             query?: never;
@@ -229,6 +246,21 @@ export interface components {
             acknowledged_by: string | null;
             /** Resolved At */
             resolved_at: string | null;
+            /** Resolved By */
+            resolved_by: string | null;
+            /** Escalation Due At */
+            escalation_due_at: string | null;
+            /** Escalated At */
+            escalated_at: string | null;
+            /**
+             * Response Started At
+             * Format: date-time
+             */
+            response_started_at: string;
+            /** Recovery Count */
+            recovery_count: number;
+            /** Recovery Observed At */
+            recovery_observed_at: string | null;
             original_assessment: components["schemas"]["Assessment"] | null;
             latest_assessment: components["schemas"]["Assessment"] | null;
             /** Revision */
@@ -277,6 +309,21 @@ export interface components {
             acknowledged_by: string | null;
             /** Resolved At */
             resolved_at: string | null;
+            /** Resolved By */
+            resolved_by: string | null;
+            /** Escalation Due At */
+            escalation_due_at: string | null;
+            /** Escalated At */
+            escalated_at: string | null;
+            /**
+             * Response Started At
+             * Format: date-time
+             */
+            response_started_at: string;
+            /** Recovery Count */
+            recovery_count: number;
+            /** Recovery Observed At */
+            recovery_observed_at: string | null;
             original_assessment: components["schemas"]["Assessment"] | null;
             latest_assessment: components["schemas"]["Assessment"] | null;
             /** Revision */
@@ -305,6 +352,10 @@ export interface components {
              * Format: date-time
              */
             occurred_at: string;
+            /** Details */
+            details: {
+                [key: string]: string | number | null;
+            };
         };
         /** AlertPage */
         AlertPage: {
@@ -652,6 +703,16 @@ export interface components {
             received_at: string;
             /** Assessment Id */
             assessment_id: string | null;
+        };
+        /** Resolve */
+        Resolve: {
+            /**
+             * Command Id
+             * Format: uuid
+             */
+            command_id: string;
+            /** Note */
+            note: string;
         };
         /** StoredReading */
         StoredReading: {
@@ -1136,6 +1197,79 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["Acknowledge"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Alert"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    resolve_alert_api_v1_alerts__alert_id__resolve_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "x-demo-caregiver-id": string;
+            };
+            path: {
+                alert_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Resolve"];
             };
         };
         responses: {

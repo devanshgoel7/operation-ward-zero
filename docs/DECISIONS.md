@@ -56,6 +56,8 @@ Accepted. Save open/acknowledged/resolved state, assignee, peak priority, deadli
 
 High/watch deadlines are 30/60-second demonstration settings. Escalate once from primary to backup. Acknowledgement cancels pending escalation. Higher priority requires acknowledgement again. Resolution follows the conditions in the architecture. Restart recovery reads saved state rather than rebuilding in-memory countdowns.
 
+M5 implementation note, 2026-11-07. Reuse the existing seeded primary/backup foreign keys, patient-first locks and one periodic loop. Persist risk recovery count and last qualifying observation on the episode; only new current complete readings without any firing rule count. Reset on concern, incomplete assessment or a freshness break, and recheck freshness at resolution. Observation clearing/expiry and upload retries cannot fabricate recovery. Existing episodes conservatively start counting at zero on upgrade. Preserve the existing return-to-primary behavior for reopened response cycles, retaining all previous events. Record response duration from the latest opening/reopening and separately from assignment, plus the resolution actor and literal note. Match exact command payloads before applying new state transitions so a lost old response can be retried after reassignment without acknowledging a new cycle. These are implementations of the approved lifecycle, with no additional escalation tier, identity system or external delivery.
+
 ## D09 — One application worker and recoverable live updates
 
 Accepted. Run one Uvicorn worker. Use WebSockets for invalidation, bounded client queues, REST snapshots on reconnect, and polling fallback.

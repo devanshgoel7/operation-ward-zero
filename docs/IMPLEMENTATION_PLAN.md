@@ -4,11 +4,11 @@ Updated 2026-11-07. Read [AGENTS.md](../AGENTS.md) before work. The approved beh
 
 ## Current state
 
-M0 through M4 are complete. The simulator retains frames across transport and service outages. PostgreSQL stores threshold/trend/observation evidence, monitoring gaps and delayed-review episodes. The polling dashboard distinguishes current data quality from concern and provides history charts and structured observations. The [M4 walkthrough](../README.md#verify-m4) describes the implemented context rules and browser verification. The user requested an uncommitted M4 handoff.
+M0 through M5 are complete. The simulator retains frames across transport and service outages. PostgreSQL stores threshold/trend/observation evidence, monitoring gaps, delayed-review episodes and the complete caregiver lifecycle. The polling dashboard provides context, backup escalation, acknowledgement, recovery progress, resolution and saved response history. The [M5 walkthrough](../README.md#verify-m5) describes the implemented workflow and verification. The user authorized M5 only, then authorized a local commit after the uncommitted handoff. No push is authorized.
 
 The workspace was empty when documentation creation began. During planning on 2026-11-05, Python and Node were absent from the inspected shell PATH. Docker CLI was present, its daemon was unreachable, and its user configuration could not be read in that session. Recheck these observations during M0. They do not establish the machine's permanent configuration.
 
-The M0 through M4 sections record executed checks. M4 is complete; the user subsequently authorized a local commit without pushing. The earlier caregiver handoff remains recorded under M5; no further M5 or M6 work was performed.
+The M0 through M5 sections record executed checks. Earlier commit authorizations remain historical entries in the handoff log. M5 is complete; the user subsequently authorized a local commit without pushing. M6 and M7 remain pending and were not started.
 
 ## Budget and priorities
 
@@ -23,7 +23,7 @@ P1, after P0 passes, includes a compact reliability export, connection-gap visua
 | M2 Explained alerts and acknowledgement | 6 | 15 | Complete |
 | M3 Failure recovery and data quality | 7 | 22 | Complete |
 | M4 Historical trends and observations | 5 | 27 | Complete — local commit authorized; no push |
-| M5 Escalation and lifecycle completion | 4 | 31 | Partial — requested caregiver handoff implemented; full lifecycle gate pending |
+| M5 Escalation and lifecycle completion | 4 | 31 | Complete — verified; local commit authorized; no push |
 | M6 Real-time dashboard polish | 5 | 36 | Pending |
 | M7 Full verification and submission | 4 | 40 | Pending |
 | Contingency | 8 | 48 | Reserved |
@@ -178,14 +178,31 @@ Review corrected an ingestion/expiry race that could leave expired observation e
 
 Depends on M4. Implement persisted deadlines, backup assignment, resolution conditions, higher-priority reopening, and response timing. Likely areas are lifecycle, periodic loop, inbox, and resolution form.
 
-- [ ] Due alerts escalate within one five-second loop interval.
-- [ ] Acknowledgement cancels pending escalation.
-- [ ] Restart processes overdue work exactly once at the state-transition level.
-- [ ] Concurrent actions preserve consistent assignment and history.
-- [ ] Resolution conditions are enforced server-side.
-- [ ] Higher priority requires acknowledgement again.
+**Implementation plan executed, 2026-11-07.** The user authorized M5 only and prohibited commits. Inspection confirmed primary/backup foreign keys and seeds, saved deadlines, patient-first locking, a five-second startup/periodic worker, and caregiver inbox filtering already existed. Completed resolution with durable recovery evidence and idempotent commands; exposed deadlines, response timing and lifecycle history; added the resolution form. Verified controlled-clock boundaries, PostgreSQL races/rollback/replays, real restart recovery and the browser primary → backup → acknowledgement → recovery → resolution flow. Preserved M4 context rules and kept M6 pending.
+
+- [x] Due alerts escalate within one five-second loop interval.
+- [x] Acknowledgement cancels pending escalation.
+- [x] Restart processes overdue work exactly once at the state-transition level.
+- [x] Concurrent actions preserve consistent assignment and history.
+- [x] Resolution conditions are enforced server-side.
+- [x] Higher priority requires acknowledgement again.
 
 Test deadlines with a fake clock, restart recovery, acknowledgement/escalation races, repeated commands, and priority increases. Demonstrate primary timeout → backup acknowledgement → recovery → resolution. Done requires the common gate and durable lifecycle history.
+
+**Verification on 2026-11-07.** All six criteria passed. Migration `0008_resolution` preserves existing deadlines, assignments, evidence and commands while adding recovery and response metadata. Resolution enforces assignment, acknowledgement, note and kind-specific recovery under the existing patient lock. Original/peak evidence and earlier response cycles remain durable. The [README](../README.md#verify-m5) documents the API and demonstration.
+
+| Check run | Observed result |
+|---|---|
+| `docker compose up -d --build --wait app` | App/database healthy; strict TypeScript and Vite production build passed. Existing volumes preserved. |
+| `docker compose exec -T app python -m pytest -q` | **83 passed** on real PostgreSQL, including all existing regressions. M5 covers exact 30/60-second boundaries with controlled time, no early or repeated escalation, cancellation, response timing, shortened deadlines, higher-priority reopening across incomplete data, old acknowledgement replay after reassignment, concurrent resolution replay, acknowledgement/escalation and resolution/new-High races, note/assignment/recovery validation, stale and incomplete recovery, historical/replayed input, active context and supported trends, transaction rollback and M4 upgrade compatibility. |
+| `docker compose up -d --build --wait simulator` and `docker compose exec -T simulator python -m unittest discover -s simulator` | **6 passed** after refreshing the previously stale running simulator image. Its earlier run exposed only three older tests; the final run used all current tests. Synthetic transport errors/quarantine logs are expected test fixtures. Persistent simulator buffer preserved. |
+| `node scripts/test-lifecycle-ui.cjs` with bundled Node/Playwright and Edge | Passed twice in isolated projects. Final project `wardzero-m5-ui-1794041094755`: actual primary timeout escalated **523 ms** after the saved deadline (first run 681 ms), within one five-second loop. Browser completed backup acknowledgement → rejected premature resolution/draft retention → three recovered readings → resolution. A real committed resolution response was dropped and retried after reload with one saved event; literal note and response timings rendered correctly. |
+| Same M5 script, real app stop/start and second restart | A different saved deadline was made overdue while the app was stopped. Startup processed one escalation before readiness; a second restart retained exactly one escalation. Previously resolved alert, actor, note, timings and entire event history survived unchanged. QA services stopped and evidence volumes retained. |
+| `node scripts/test-context-ui.cjs` | M4 browser regression passed on the M5 build: both trends, stored chart, combined High, clearing, actor attribution, literal notes, dropped committed observation response/reload retry and real restart expiry. Project `wardzero-m4-ui-1794041050134` stopped with evidence retained. |
+| `docker compose exec -T app python -m pytest -q tests/test_lifecycle.py` after expanding the legacy migration fixture | **14 passed**. Also confirms a previous response cycle's escalation timestamp does not carry into a reopened cycle. Two derived timestamps from the interim development migration on the regular stack were refreshed from their saved events; source history and assignments were preserved. |
+| `docker compose exec -T app alembic current`, `docker compose config -q`, loopback HTTP, local link check and `git diff --check` | Migration `0008_resolution (head)`, valid Compose configuration, readiness `ready` and three fresh patient snapshots at port 8010. All **21** local Markdown links/anchors passed. Frontend sources decode as UTF-8 and the final diff check passed. |
+
+Review added coverage for an incomplete frame concealing a renewed priority rise and for legacy command replay after migration. One intermediate run failed because the new migration fixture omitted its opening event; the fixture was corrected and the complete suite then passed. Screenshot review corrected the new form's text encoding and added its input styling; the final browser run verified the corrected build. Existing non-failing Starlette deprecation and Vite module/chunk warnings remain. No open M5 failures or blockers. Full M7 outage rehearsal was not rerun for this milestone. The common gate's commit step is waived by the user's explicit no-commit instruction.
 
 ### M6 — Real-time dashboard polish
 
@@ -284,3 +301,7 @@ Future entries should include milestone status, actual commands/results, outstan
 **2026-11-07 — M4 handoff.** Inspected the approved documents and actual code, recorded the detailed implementation plan, then completed all five M4 criteria. Evidence is in the M4 table above. The regular dashboard runs migration `0007_context` with persistent data preserved. All work remains uncommitted as requested. No open M4 failures or blockers. The next planned milestone is M5 lifecycle completion, which requires separate authorization; no next-milestone work was started.
 
 **2026-11-07 — M4 commit authorization.** The user subsequently authorized committing the completed M4 implementation, tests, and documentation locally, with no push. The verification evidence above remains applicable; the pre-commit diff check passed. No additional milestone work was authorized.
+
+**2026-11-07 — M5 handoff.** Completed all six M5 criteria and the caregiver primary timeout → backup acknowledgement → recovery → resolution demonstration. Final evidence: 83 backend tests, six simulator tests, strict TypeScript/build, M5 browser/restart/lost-response checks and M4 browser regression passed. Saved lifecycle history and response timing survive restart. The regular dashboard runs at port 8010 with persistent volumes preserved. No open failures or blockers; all M5 changes remain uncommitted. The next planned step is M6, requiring separate authorization; no M6 or M7 implementation was started.
+
+**2026-11-07 - M5 commit authorization.** The user authorized committing the completed M5 implementation, tests and documentation locally, with no push. The verification evidence above remains applicable; the pre-commit diff check passed. No further milestone work was authorized.

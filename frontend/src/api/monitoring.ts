@@ -40,3 +40,26 @@ export async function acknowledgeAlert(alertId: string, actor: string): Promise<
   }
   sessionStorage.removeItem(key);
 }
+
+export async function fetchAlert(alertId: string, signal: AbortSignal): Promise<components["schemas"]["AlertDetail"]> {
+  const response = await fetch(`/api/v1/alerts/${alertId}`, { signal, cache: "no-store" });
+  if (!response.ok) throw new Error("Could not load lifecycle history.");
+  return response.json();
+}
+
+export async function fetchResolvedAlerts(actor: string, signal: AbortSignal): Promise<components["schemas"]["AlertPage"]> {
+  const response = await fetch(`/api/v1/alerts?status=resolved&assignee_id=${actor}&limit=50`, { signal, cache: "no-store" });
+  if (!response.ok) throw new Error("Could not load resolved alerts.");
+  return response.json();
+}
+
+export async function resolveAlert(alertId: string, actor: string, body: components["schemas"]["Resolve"]): Promise<void> {
+  const response = await fetch(`/api/v1/alerts/${alertId}/resolve`, {
+    method: "POST", headers: { "Content-Type": "application/json", "X-Demo-Caregiver-Id": actor },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const result = await response.json().catch(() => null);
+    throw new Error(result?.error?.message ?? "Could not confirm resolution. Retry the saved note.");
+  }
+}

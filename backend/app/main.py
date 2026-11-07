@@ -55,7 +55,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await app.state.engine.dispose()
 
 
-app = FastAPI(title="Operation Ward Zero", version="0.4.0", lifespan=lifespan, exception_handlers=handlers)
+app = FastAPI(title="Operation Ward Zero", version="0.5.0", lifespan=lifespan, exception_handlers=handlers)
 app.include_router(health_router)
 app.include_router(monitoring_router)
 app.include_router(alerts_router)

@@ -112,6 +112,10 @@ Kinds are risk, monitoring_gap, and delayed_review. Status transitions are open 
 
 The lifespan-managed periodic loop checks freshness, expired observations, and due escalations. Process overdue work before startup readiness. Readiness checks database availability, migrations, and loop health. Health checks assist startup ordering, while application retries handle later outages.
 
+M5 implementation detail: risk episodes persist a recovery count (0–3) and last qualifying observation time. Only a newly accepted, current reading with complete measurements and no threshold, trend or observation findings increments it. Concern, incomplete/unavailable assessment or a freshness break resets it; replay and historical input cannot advance it. Context clearing/expiry never increments it. Resolution checks acknowledgement, assignment, a nonblank note up to 500 characters, count three and a still-fresh last qualifying observation under the patient lock. Counting can begin before acknowledgement, but manual resolution cannot. Monitoring gaps keep their separate automatic recovery rule; delayed review does not require current vital recovery.
+
+Acknowledgement and resolution reserve the global command ID in the same transaction as state and audit changes. A replay matching alert, actor, action and exact note returns current state without repeating a transition, even after reassignment; conflicting reuse fails. Resolution records its actor and note durably. Acknowledgement events record seconds since the latest opening/reopening and seconds since that cycle's assignment (backup handoff when applicable). Reopening retains event history, resets current-cycle response timestamps, and returns assignment to primary as in the existing caregiver handoff. Missing measurements between a lower known concern and High cannot conceal a priority rise. Saved deadlines are shortened, never extended, by higher concern. Only a new response cycle starts a new deadline.
+
 ## Database
 
 Use UUID keys, UTC timestamptz, explicit foreign keys, constrained statuses, typed measurement columns, and JSONB explanation snapshots.
@@ -148,6 +152,8 @@ erDiagram
 Enforce unique reading ID and (device_id, sequence), unique device per patient, unique non-null command_id, and a partial unique (patient_id, kind) index for open/acknowledged alerts. Derive reading patient_id from the device server-side.
 
 M4 migration `0007_context` adds `observations`, `patients.context_expires_at`, and assessment `observation_id`, `trigger_kind`, and `trend_summary`. Reading-triggered assessments alone have a unique `reading_id`; observation-triggered assessments have a unique `observation_id`. Reading receipts select the original reading-triggered assessment even after subsequent contextual reassessments. Observation-triggered assessments may have no reading and have stale/unavailable quality independently of concern. Downgrade refuses to discard saved M4 context evidence.
+
+M5 migration `0008_resolution` adds alert `response_started_at`, `escalated_at`, `resolved_by`, `recovery_count` and `recovery_observed_at`, plus event `details` and deadline/inbox indexes. Existing deadlines, assignments, immutable assessments and command IDs survive upgrade. Response-cycle timestamps are reconstructed from saved events; existing episodes start recovery counting at zero. Downgrade refuses to discard saved M5 event details.
 
 Index reading history by (patient_id, observed_at DESC, id), observations by (patient_id, tag, created_at DESC), assessments by (patient_id, evaluated_at DESC), inboxes by (assignee_id, status, opened_at DESC), due open alerts by escalation_due_at, and events by (alert_id, occurred_at).
 
@@ -189,6 +195,8 @@ The simulator CLI will support run, scenario <patient> <stable|deterioration|rec
 Use one page with three patient cards, selected vitals and timestamps, quality status, a selectable-metric chart, explanations, observations, caregiver inbox filtering, lifecycle controls/history, and synchronization status. Pair colors with text/icons. Confirm mutations only after server success. Retain failed drafts visibly.
 
 M4 adds a selected-patient chart for all five metrics using the last 30 minutes of observed-time history (newest 2,000 rows, with a visible limit notice if truncated). Nulls and gaps over ten seconds break the chart line. The observation form uses the same demo caregiver selection as the inbox. Unconfirmed submission payloads and UUIDs survive reload in session storage, keyed by patient and actor; retry resends exactly that payload. Explicitly discarding a draft does not undo any server-side save.
+
+M5 adds saved deadlines, recovery progress, resolution notes, chronological lifecycle history and response durations to the polling caregiver inbox. The selected caregiver can load their newest 50 resolved episodes; all older history remains in the paginated REST interface. Unconfirmed resolution payloads and command IDs survive reload, keyed by alert and actor, and remain retryable from resolved episodes. The server enforces every resolution condition. WebSocket work remains M6.
 
 For recovery verification, stop generation and drain the queue. Compare identifier sets so locally committed IDs equal the disjoint union of server-stored, pending, and quarantined IDs. Valid fully drained fixtures must all exist on the server.
 

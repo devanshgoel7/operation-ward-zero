@@ -70,13 +70,46 @@ The [running OpenAPI contract](http://127.0.0.1:8010/docs) lists fields, units a
 
 The simulator keeps every frame in its named volume, including its original payload, delivery status and attempt metadata. Sampling continues while the oldest pending upload retries. Network errors, unconfirmed receipts, HTTP 408, 429 and server errors back off with jitter up to 15 seconds. A longer Retry-After takes precedence. Other 4xx responses quarantine that frame and allow the next upload to proceed.
 
+## Verify M5
+
+M5 completes caregiver escalation and resolution. Upgrade with `docker compose up --build --wait --wait-timeout 120`; migration `0008_resolution` preserves existing evidence, assignments, deadlines and command IDs. Existing episodes start with zero counted recovery readings and collect new evidence after upgrade.
+
+On the [dashboard](http://127.0.0.1:8010/), select Alex Morgan and trigger a synthetic episode:
+
+```powershell
+docker compose exec -T simulator python -m simulator.trigger_alert mira
+```
+
+Leave it unanswered. The inbox displays the saved deadline: Watch allows 60 seconds; High shortens the remaining wait to at most 30 seconds. The five-second worker assigns it to backup Sam Rivera once. Select Sam and **Acknowledge**. Acknowledgement cancels the deadline. Backup alerts remain visibly unacknowledged until acted on; there is no third tier. New concern after recovery or a rise to High reopens an acknowledged episode under Alex and retains earlier responses in history.
+
+Wait for **Recovery: 3/3**. Risk resolution requires three consecutive new current, fresh, complete readings with no threshold, trend or active observation findings. Incomplete data, firing rules or a freshness break reset recovery. Historical input and repeated uploads do not count. Clearing or expiring observations cannot create recovered readings. Add a required resolution note (maximum 500 characters), then **Resolve alert**. The server rejects premature or stale recovery. Delayed-review episodes need acknowledgement and a review note; monitoring gaps continue to close automatically after three fresh complete readings.
+
+Expand **Lifecycle history** for actors, transition times, the resolution note and acknowledgement response durations. Response time runs from the latest opening/reopening; assignment response time runs from that point or the latest backup handoff. **Show recently resolved alerts** displays the newest 50 resolved episodes for the selected caregiver; the paginated alerts API retains all episodes. Notes are displayed literally. Unconfirmed resolution commands and notes survive reload in session storage; select the same caregiver and use **Retry saved resolution**, including from the resolved list when the original save succeeded. Discarding a draft never undoes a saved resolution.
+
+| Request | M5 behavior |
+|---|---|
+| `POST /api/v1/alerts/{id}/resolve` | Requires current assignee in `X-Demo-Caregiver-Id` and body `{ "command_id": "UUID", "note": "Recovery/review note" }`. Returns updated alert after commit. Identical replay returns 200 without another transition; conflicting command/note or unmet conditions returns 409, wrong actor 403, invalid note 422, persistence failure 503. |
+| `GET /api/v1/alerts/{id}` | Saved events now include response durations and resolution notes in `details`. Alert fields include saved deadline, current-cycle escalation/response timestamps, recovery count/last observation, resolution time and actor. |
+| `POST /api/v1/alerts/{id}/acknowledge` | Exact retries remain safe after subsequent reassignment or reopening and return current state without acknowledging a new response cycle. A new cycle needs a new command. |
+
+```powershell
+docker compose exec -T app python -m pytest -q
+docker compose exec -T simulator python -m unittest discover -s simulator
+docker compose exec -T app alembic current
+# Requires Node, Playwright and Microsoft Edge, as with the M4 check.
+node scripts/test-lifecycle-ui.cjs
+node scripts/test-context-ui.cjs
+```
+
+The M5 browser script creates its own Compose project on a random loopback port. It measures a real 30-second primary timeout against the five-second loop, acknowledges as backup, verifies rejected premature resolution and retained drafts, supplies recovery, drops a committed resolution response and retries it, then checks saved history across real app stop/start and restart. It makes a separate fixture's deadline overdue while the app is stopped and verifies one escalation across two starts. It saves `m5-browser-evidence.png`, stops its services and preserves its PostgreSQL evidence volume. The regular demo data is untouched by these fixtures. Backend tests use disposable real PostgreSQL databases and controlled times for boundaries, races, idempotency, rollback and M4 migration compatibility.
+
 ## Verify M4
 
-M4 adds observed-time history charts, two descriptive trends, and caregiver observations. Start or upgrade with the normal `docker compose up --build --wait --wait-timeout 120` command; existing volumes and receipts are preserved. The migration head is `0007_context`.
+M4 adds observed-time history charts, two descriptive trends, and caregiver observations. Start or upgrade with the normal `docker compose up --build --wait --wait-timeout 120` command; existing volumes and receipts are preserved. M4 introduced migration `0007_context`; the current M5 head is `0008_resolution`.
 
 On the [dashboard](http://127.0.0.1:8010/), select **Demo caregiver**, then use **History and observations** to select a patient and chart metric. The chart shows the last 30 minutes, breaks lines at missing measurements or gaps over ten seconds, and reports its 2,000-row display limit when relevant. Trend summaries show counts, window times, medians/change, or why continuous history is insufficient. Findings expand to the exact stored reading evidence.
 
-Use **Record observation** for breathlessness, dizziness, or reduced intake. **Present** applies for ten minutes; **Absent / clear this tag** immediately removes that tag. Only the patient's seeded primary or backup caregiver may submit. Notes (maximum 500 characters) are stored and displayed literally. An active tag floors concern at Watch; breathlessness plus a current SpO₂ threshold breach or supported falling trend raises High. Clearing or expiry preserves other firing rules and the alert's peak priority. Risk resolution remains planned for M5.
+Use **Record observation** for breathlessness, dizziness, or reduced intake. **Present** applies for ten minutes; **Absent / clear this tag** immediately removes that tag. Only the patient's seeded primary or backup caregiver may submit. Notes (maximum 500 characters) are stored and displayed literally. An active tag floors concern at Watch; breathlessness plus a current SpO₂ threshold breach or supported falling trend raises High. Clearing or expiry preserves other firing rules and the alert's peak priority. Risk resolution follows the [M5 conditions](#verify-m5).
 
 Failed or unconfirmed saves retain the exact payload and UUID through reload. Select the same patient and caregiver, then **Retry saved observation**. **Discard draft** only removes the browser draft; it does not undo a possible server save.
 

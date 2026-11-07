@@ -4,8 +4,8 @@ from uuid import UUID
 from fastapi import APIRouter, Header, Query, Request
 
 from app.api.monitoring import ErrorEnvelope
-from app.models.alerts import Acknowledge, Alert, AlertDetail, AlertPage, Status
-from app.services.alerts import acknowledge, alert_detail, list_alerts
+from app.models.alerts import Acknowledge, Alert, AlertDetail, AlertPage, Resolve, Status
+from app.services.alerts import acknowledge, alert_detail, list_alerts, resolve
 
 router = APIRouter(prefix="/api/v1/alerts", responses={422: {"model": ErrorEnvelope}, 503: {"model": ErrorEnvelope}})
 
@@ -30,3 +30,11 @@ async def detail(alert_id: UUID, request: Request) -> AlertDetail:
 async def acknowledge_alert(alert_id: UUID, body: Acknowledge, request: Request,
                             x_demo_caregiver_id: Annotated[UUID, Header()]) -> Alert:
     return await acknowledge(request.app.state.engine, alert_id, x_demo_caregiver_id, body.command_id)
+
+
+@router.post("/{alert_id}/resolve", responses={
+    403: {"model": ErrorEnvelope}, 404: {"model": ErrorEnvelope}, 409: {"model": ErrorEnvelope},
+})
+async def resolve_alert(alert_id: UUID, body: Resolve, request: Request,
+                        x_demo_caregiver_id: Annotated[UUID, Header()]) -> Alert:
+    return await resolve(request.app.state.engine, alert_id, x_demo_caregiver_id, body)
