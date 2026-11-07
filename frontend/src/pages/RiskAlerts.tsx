@@ -18,7 +18,7 @@ function Evidence({ assessment }: { assessment: Assessment }) {
       <br/><small>Observed {new Date(f.observed_at).toLocaleString()} · Rule {f.rule_id}</small>
     </li>)}</ul>
     <small className="source">{assessment.rule_version} · {assessment.data_quality === "incomplete"
-      ? "Incomplete reading" : "Complete reading"} · Reading {assessment.reading_id}</small>
+      ? "Incomplete reading" : "Complete reading"} · {assessment.scope === "historical" ? "Historical reading" : "Reading"} {assessment.reading_id}</small>
   </>;
 }
 
@@ -31,12 +31,14 @@ function Episode({ alert, actor, patient, assignee, backup }: {
     onSuccess: async () => { await cache.invalidateQueries({ queryKey: ["dashboard"] }); },
   });
   return <article className="episode" data-priority={alert.peak_priority}>
-    <div className="episode-heading"><h3>{patient}</h3><span>{alert.peak_priority} peak concern</span></div>
+    <div className="episode-heading"><h3>{patient}</h3><span>{alert.peak_priority} priority</span></div>
+    <strong>{{ risk: "Threshold concern", monitoring_gap: "Monitoring gap", delayed_review: "Delayed review" }[alert.kind]}</strong>
+    {alert.kind === "monitoring_gap" && <p>Opened after 30 seconds without a complete reading. Three consecutive fresh complete readings close this gap.</p>}
     <p>{backup ? "Escalated to backup caregiver" : "Assigned to primary caregiver"} {assignee} · {alert.status === "open" ? "Awaiting acknowledgement" :
       `Acknowledged by ${assignee} at ${new Date(alert.acknowledged_at!).toLocaleString()}`}</p>
-    <h4>Latest alert evidence <span className="severity" data-level={alert.latest_assessment.concern}>{alert.latest_assessment.concern}</span></h4>
-    <Evidence assessment={alert.latest_assessment}/>
-    {alert.original_assessment.id !== alert.latest_assessment.id && <details>
+    {alert.latest_assessment && <><h4>Latest alert evidence <span className="severity" data-level={alert.latest_assessment.concern}>{alert.latest_assessment.concern}</span></h4>
+    <Evidence assessment={alert.latest_assessment}/></>}
+    {alert.original_assessment && alert.original_assessment.id !== alert.latest_assessment?.id && <details>
       <summary>Opening evidence <span className="severity" data-level={alert.original_assessment.concern}>{alert.original_assessment.concern}</span></summary><Evidence assessment={alert.original_assessment}/>
     </details>}
     {alert.status === "open" && <button type="button" disabled={actor !== alert.assignee_id || action.isPending}

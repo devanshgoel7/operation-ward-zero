@@ -123,7 +123,8 @@ def test_missing_and_historical_readings(client: TestClient) -> None:
                        "observed_at": (datetime.now(UTC) - timedelta(minutes=5)).isoformat()}
     assert client.post(f"{API}/readings", json=old).status_code == 201
     assert client.get(path).json()["current_assessment"] == assessment
-    assert client.get(f"{API}/alerts", params={"patient_id": patient["id"]}).json()["items"] == []
+    [review] = client.get(f"{API}/alerts", params={"patient_id": patient["id"]}).json()["items"]
+    assert review["kind"] == "delayed_review" and review["latest_assessment"]["scope"] == "historical"
 
 
 def test_event_write_failure_rolls_back_all_effects(client: TestClient) -> None:

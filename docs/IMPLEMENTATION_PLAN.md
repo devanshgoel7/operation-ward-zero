@@ -1,14 +1,14 @@
 # Implementation plan and progress
 
-Updated 2026-11-06. Read [AGENTS.md](../AGENTS.md) before work. The approved behavior is in [ARCHITECTURE.md](ARCHITECTURE.md), with rationale in [DECISIONS.md](DECISIONS.md).
+Updated 2026-11-07. Read [AGENTS.md](../AGENTS.md) before work. The approved behavior is in [ARCHITECTURE.md](ARCHITECTURE.md), with rationale in [DECISIONS.md](DECISIONS.md).
 
 ## Current state
 
-M0, M1 and M2 are complete. A local simulator samples three fictional adults every five seconds, commits frames to SQLite, and uploads them to FastAPI. PostgreSQL saves threshold assessments, risk episodes and caregiver acknowledgements. The polling dashboard displays readings, explanations, and the assigned caregiver's response. This session authorized M2 and an uncommitted handoff. See the [M2 walkthrough](../README.md#verify-m2).
+M0 through M3 are complete. The simulator retains frames across transport and service outages. PostgreSQL stores assessment evidence, monitoring gaps and delayed-review episodes. The polling dashboard distinguishes current data quality from concern. The [M3 walkthrough](../README.md#verify-m3) reproduces the failure matrix in an isolated project. The user requested an uncommitted M3 handoff.
 
 The workspace was empty when documentation creation began. During planning on 2026-11-05, Python and Node were absent from the inspected shell PATH. Docker CLI was present, its daemon was unreachable, and its user configuration could not be read in that session. Recheck these observations during M0. They do not establish the machine's permanent configuration.
 
-The M0–M2 sections record executed checks. The full failure-recovery matrix and later lifecycle work remain scheduled for subsequent milestones.
+The M0 through M3 sections record executed checks. M4 awaits authorization. The earlier caregiver handoff remains recorded under M5.
 
 ## Budget and priorities
 
@@ -21,7 +21,7 @@ P1, after P0 passes, includes a compact reliability export, connection-gap visua
 | M0 Environment and contracts | 3 | 3 | Complete |
 | M1 Durable monitoring vertical slice | 6 | 9 | Complete |
 | M2 Explained alerts and acknowledgement | 6 | 15 | Complete |
-| M3 Failure recovery and data quality | 7 | 22 | Pending |
+| M3 Failure recovery and data quality | 7 | 22 | Complete |
 | M4 Historical trends and observations | 5 | 27 | Pending |
 | M5 Escalation and lifecycle completion | 4 | 31 | Partial — requested caregiver handoff implemented; full lifecycle gate pending |
 | M6 Real-time dashboard polish | 5 | 36 | Pending |
@@ -110,15 +110,30 @@ Test threshold boundaries, mixed priorities, incomplete inputs, rollback, duplic
 
 Depends on M2. Implement retry classification, quarantine, freshness, historical input handling, gap/review alerts, and verification. Likely areas are simulator upload/verification, ingestion/freshness/health, and quality UI.
 
-- [ ] Network interruptions accumulate and subsequently drain persistent readings.
-- [ ] Simulator restart retains pending records and sequence numbers.
-- [ ] Application and database outages produce no false successful acknowledgements.
-- [ ] Lost responses after commit recover without duplicate effects.
-- [ ] Old input cannot regress current state.
-- [ ] Missing data and delayed concerns are visible.
-- [ ] Generated IDs reconcile with server, pending, and quarantine sets.
+- [x] Network interruptions accumulate and subsequently drain persistent readings.
+- [x] Simulator restart retains pending records and sequence numbers.
+- [x] Application and database outages produce no false successful acknowledgements.
+- [x] Lost responses after commit recover without duplicate effects.
+- [x] Old input cannot regress current state.
+- [x] Missing data and delayed concerns are visible.
+- [x] Generated IDs reconcile with server, pending, and quarantine sets.
 
 Run the failure matrix below against real PostgreSQL. Demonstrate actual transport disconnection, buffering, recovery, and verification. Done requires the common gate and passing durability tests.
+
+**Verification on 2026-11-07.** M1 already had durable SQLite generation, stable sequences and receipt replay. Its retry loop treated every error as transient. M2 already protected current pointers and saved historical assessments. Its inbox only exposed risk episodes, its worker only checked escalation, and readiness had no worker heartbeat. M3 extended those paths in place. The migration groups existing M2 historical concerns into review episodes and preserves legacy M1 receipts.
+
+| Check run | Observed result |
+|---|---|
+| `docker compose -p wardzero-m3-check up -d --build --wait` with `APP_PORT=18013`, `docker compose config -q`, and `alembic current` in the app | Compose, strict TypeScript and the production build passed. The isolated app reported `0006_data_quality (head)`. Regenerated the frontend declarations from its OpenAPI document with openapi-typescript 7.10.1. |
+| `docker compose -p wardzero-m3-check exec -T app python -m pytest -q` | 47 passed against real PostgreSQL, with one existing TestClient deprecation warning. Checks include the 30-second boundary, stale and last-known snapshots, an incomplete high during a gap, three consecutive eligible recovery readings, replay and out-of-order handling, migration from M1/M2, overdue worker readiness, transaction rollback and competing acknowledgement/escalation. |
+| `docker compose -p wardzero-m3-check exec -T simulator python -m unittest discover -s simulator` | 6 passed. Covered SQLite write failure, stable replay, retryable HTTP statuses, both Retry-After formats, quarantine and exact ID-set discrepancies including overlaps and equal-count substitutions. |
+| `python scripts/test-recovery.py` | Project `wardzero-m3-5175c750cd` accumulated **24 pending frames** during an actual network disconnect. All three patients went stale and opened gaps. Reconnecting drained the queue and exposed a historical concern. During a backend stop, the simulator restarted with the same pending IDs and per-device sequences continued. On app startup a persisted overdue review escalated once. |
+| PostgreSQL stop and post-commit response loss in the same run | During the DB outage, a valid ingestion request returned 503, liveness returned 200, and SQLite accepted no additional receipts. Uploads drained after restart. The proxy dropped the committed receipt for `af2ce5b6-ecc4-4947-a52a-b119cfc4bc17`. Retry left exactly one reading, assessment and alert event. |
+| Frozen ID comparison in the same run | All **55 generated valid IDs** matched all 55 PostgreSQL IDs, with zero pending or quarantined. A second fixture verified **58 generated = 56 stored + 1 pending + 1 quarantined** with empty discrepancy and overlap sets. A real 422 quarantined the invalid device frame while the following valid frame uploaded. Both named volumes were retained. |
+| `node scripts/test-quality-ui.cjs wardzero-m3-check` with Playwright and headless Edge | The offline browser displayed refresh failure. On reconnect it showed a saved monitoring gap, stale data and last known concern. A new incomplete high reading showed the delay and the high breach. A repeat run selected the current assignee and matched the rendered historical reading UUID to the stored review assessment before and after reload. |
+| `./scripts/test-monitoring.ps1` and `./scripts/test-readiness.ps1` with `COMPOSE_PROJECT_NAME=wardzero-m3-check` and `APP_PORT=18013` | All three rendered IDs matched SQLite and server history across a real app restart. Readiness went 200, 503, 200 across a PostgreSQL stop/start. Liveness stayed 200 during the outage. |
+
+The first matrix run exposed an ephemeral test-port change after the app restart. The runner now rediscovers the published port, and the full matrix passed on rerun. A clock fixture initially placed a gap-opening event in the future relative to acknowledgement. The corrected boundary test uses a past monitoring start. Local Windows temporary-file restrictions required an authorized rerun of the simulator tests, which also passed inside Compose. The QA dashboard is available on loopback port 18013. The failure-matrix projects are stopped with their volumes retained. Local documentation links and anchors and `git diff --check` passed. No open M3 blockers.
 
 ### M4 — Historical trends and observations
 
@@ -234,3 +249,7 @@ Future entries should include milestone status, actual commands/results, outstan
 **Live caregiver handoff follow-up.** The requested demo rotation, persisted deadlines, backup assignment and renewed acknowledgement are implemented on the main stack. Docker Compose rebuilt successfully. The app pytest suite passed 42 tests, including a real PostgreSQL deadline made due and processed by the running worker, primary rejection after reassignment, backup acknowledgement, and reopening following recovery. All three simulator tests passed, including Mira → Aryan → Lena → Mira across command invocations. Full M5 verification, resolution and broader recovery testing remain pending. Work is uncommitted.
 
 **Caregiver inbox follow-up.** Filtered the polling dashboard by the selected caregiver's current assignments. The Compose build passed strict TypeScript and Vite. In Edge, a simulated reassignment in the dashboard response moved the alert into Sam's selected inbox on polling and out of Alex's inbox. The prior PostgreSQL worker test covers the actual deadline transition.
+
+**2026-11-07 — M3 handoff.** All seven failure-recovery and data-quality criteria passed. See the M3 verification table for commands, reconciliation counts and recovery evidence. Changes are uncommitted at the user's request. The next planned milestone is M4, pending separate authorization.
+
+**2026-11-07 — M3 commit authorization.** The user subsequently authorized committing the completed M3 implementation, tests and documentation. Verification evidence remains recorded above. M4 awaits separate authorization.

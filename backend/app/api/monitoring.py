@@ -73,7 +73,7 @@ async def dashboard(request: Request) -> Dashboard:
     async with request.app.state.engine.connect() as conn:
         caregivers = await conn.execute(text("SELECT id, display_name FROM caregivers ORDER BY id"))
         return Dashboard(server_time=datetime.now(UTC), patients=await snapshots(conn),
-                         active_alerts=(await list_alerts(conn)).items,
+                         active_alerts=(await list_alerts(conn, active_only=True)).items,
                          caregivers=[Caregiver.model_validate(row) for row in caregivers.mappings()])
 
 

@@ -90,6 +90,8 @@ Structured observations support breathlessness, dizziness, and reduced_intake. S
 
 Retain delayed and out-of-order readings in history. Preserve the current pointer's time ordering. Evaluate absolute thresholds for historical input and aggregate concerns into delayed-review alerts. Full retrospective trend recomputation is outside scope. Subsequent eligible trend windows may use recovered history.
 
+M3 keeps an observed-time watermark for the last complete frame and a pointer to the most recent known concern on each patient. The first 30 seconds after monitoring starts allow time for an initial sample. Each patient snapshot distinguishes live data quality from the immutable quality of an individual assessment. A recent incomplete breach can still raise concern during a monitoring gap. A gap can open before the first reading, so its opening event can have no assessment. The patient lock protects the persisted recovery count, which advances for eligible complete frames and resets on an eligible incomplete frame or renewed staleness.
+
 ## Alert lifecycle
 
 Kinds are risk, monitoring_gap, and delayed_review. Status transitions are open → acknowledged → resolved. Escalation updates assignment and history.

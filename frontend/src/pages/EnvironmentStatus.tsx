@@ -15,7 +15,7 @@ export function EnvironmentStatus() {
         <section aria-label="Application health">
           <div>
             <h3>Application readiness</h3>
-            <p>Checks the PostgreSQL connection and migration version.</p>
+            <p>Checks PostgreSQL, migrations, and the freshness and deadline worker.</p>
           </div>
           <strong role="status" data-ready={status === "Service ready"}>{status}</strong>
         </section>

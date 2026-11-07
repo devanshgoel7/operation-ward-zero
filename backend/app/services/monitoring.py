@@ -1,5 +1,5 @@
 import hashlib
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import text
@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from app.models.monitoring import PatientSnapshot, ReadingInput, ReadingPage, Receipt, StoredReading
 from app.services.alerts import assess_reading
+from app.services.quality import FRESHNESS
 from app.services.errors import MonitoringError
 
 
@@ -56,14 +57,24 @@ async def snapshots(conn: AsyncConnection, patient_id: UUID | None = None) -> li
         SELECT to_jsonb(p) || jsonb_build_object('device_id', d.id) AS patient,
                CASE WHEN r.id IS NOT NULL THEN (to_jsonb(r) - 'payload_hash' - 'id')
                     || jsonb_build_object('reading_id', r.id) END AS latest_reading,
-               to_jsonb(a) AS current_assessment
+               CASE WHEN ar.observed_at >= :cutoff THEN to_jsonb(a) END AS current_assessment,
+               CASE WHEN r.id IS NULL THEN 'unavailable'
+                    WHEN r.observed_at < :cutoff OR greatest(p.last_complete_at,p.monitoring_started_at) < :cutoff
+                        THEN 'stale'
+                    WHEN num_nonnulls(r.heart_rate_bpm,r.spo2_pct,r.systolic_mmhg,r.diastolic_mmhg,r.temperature_c)<5
+                        THEN 'incomplete' ELSE 'fresh' END AS data_quality,
+               known.concern AS last_known_concern, kr.observed_at AS last_known_observed_at,
+               coalesce(r.received_at-r.observed_at > interval '10 seconds',false) AS delivery_delayed
         FROM patients p JOIN devices d ON d.patient_id = p.id
         LEFT JOIN readings r ON r.id = p.latest_reading_id
         LEFT JOIN assessments a ON a.id = p.current_assessment_id
+        LEFT JOIN readings ar ON ar.id=a.reading_id
+        LEFT JOIN assessments known ON known.id=p.last_known_assessment_id
+        LEFT JOIN readings kr ON kr.id=known.reading_id
     """
     if patient_id is not None:
         query += " WHERE p.id = :patient_id"
-    rows = await conn.execute(text(query + " ORDER BY p.id"), {"patient_id": patient_id})
+    rows = await conn.execute(text(query + " ORDER BY p.id"), {"patient_id": patient_id, "cutoff": datetime.now(UTC) - FRESHNESS})
     return [PatientSnapshot.model_validate(row) for row in rows.mappings()]
 
 

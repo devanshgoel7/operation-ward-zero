@@ -14,7 +14,8 @@ def live() -> Liveness:
 
 @router.get("/ready", response_model=Readiness, responses={503: {"model": Unready}})
 async def ready(request: Request) -> Readiness | JSONResponse:
-    result = await check_readiness(request.app.state.engine, request.app.state.expected_heads)
+    result = await check_readiness(request.app.state.engine, request.app.state.expected_heads,
+                                   request.app.state.worker_last_success_at)
     if isinstance(result, Unready):
         return JSONResponse(status_code=503, content=result.model_dump(mode="json"))
     return result

@@ -66,6 +66,10 @@ class PatientSnapshot(BaseModel):
     patient: Patient
     latest_reading: StoredReading | None
     current_assessment: Assessment | None
+    data_quality: Literal["fresh", "incomplete", "stale", "unavailable"]
+    last_known_concern: Literal["none", "watch", "high"] | None
+    last_known_observed_at: AwareDatetime | None
+    delivery_delayed: bool
 
 
 class Dashboard(BaseModel):

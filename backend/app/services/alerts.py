@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import text
@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from app.models.alerts import Alert, AlertDetail, AlertPage, Status
 from app.models.monitoring import ReadingInput
 from app.services.errors import MonitoringError
+from app.services.quality import FRESHNESS, record_quality
 from app.services.risk import RULE_VERSION, threshold_findings
 
 
@@ -17,7 +18,7 @@ async def assess_reading(conn: AsyncConnection, reading: ReadingInput, patient_i
     concern = "none" if complete else None
     if findings:
         concern = "high" if any(f.priority == "high" for f in findings) else "watch"
-    current = newest and received_at - reading.observed_at <= timedelta(seconds=30)
+    current = newest and received_at - reading.observed_at <= FRESHNESS
     values = {
         "patient_id": patient_id, "reading_id": reading.reading_id,
         "scope": "current" if current else "historical", "concern": concern,
@@ -30,30 +31,35 @@ async def assess_reading(conn: AsyncConnection, reading: ReadingInput, patient_i
         RETURNING id
     """), values)
     values["assessment_id"] = assessment_id
+    await record_quality(conn, patient_id, reading.observed_at, received_at, complete, current, assessment_id)
+    if findings:
+        await update_concern_episode(conn, patient_id, assessment_id, concern, "risk" if current else "delayed_review")
     if current:
-        if findings:
-            await update_risk_episode(conn, patient_id, assessment_id, concern)
+        if concern is not None:
+            await conn.execute(text("UPDATE patients SET last_known_assessment_id=:assessment_id WHERE id=:patient_id"),
+                               values)
         await conn.execute(text("UPDATE patients SET current_assessment_id = :assessment_id WHERE id = :patient_id"),
                            values)
     return assessment_id
 
 
-async def update_risk_episode(conn: AsyncConnection, patient_id: UUID, assessment_id: UUID,
-                              concern: str) -> None:
+async def update_concern_episode(conn: AsyncConnection, patient_id: UUID, assessment_id: UUID,
+                              concern: str, kind: str) -> None:
     # The caller holds the patient lock for the entire ingestion transaction.
-    values = {"patient_id": patient_id, "assessment_id": assessment_id, "concern": concern}
+    values = {"patient_id": patient_id, "assessment_id": assessment_id, "concern": concern, "kind": kind}
     values["seconds"] = 30 if concern == "high" else 60
     existing = (await conn.execute(text("""
-        SELECT a.*, p.primary_caregiver_id, prev.concern AS previous_concern
+        SELECT a.*, p.primary_caregiver_id, CASE WHEN a.kind='risk' THEN prev.concern ELSE evidence.concern END AS previous_concern
         FROM patients p JOIN alerts a ON a.patient_id=p.id
         LEFT JOIN assessments prev ON prev.id=p.current_assessment_id
-        WHERE p.id=:patient_id AND a.kind='risk' AND a.status IN ('open','acknowledged')
+        LEFT JOIN assessments evidence ON evidence.id=a.latest_assessment_id
+        WHERE p.id=:patient_id AND a.kind=:kind AND a.status IN ('open','acknowledged')
     """), values)).mappings().one_or_none()
     if existing is None:
         alert_id = await conn.scalar(text("""
             INSERT INTO alerts (patient_id, kind, status, peak_priority, assignee_id,
                                 original_assessment_id, latest_assessment_id, escalation_due_at)
-            SELECT id, 'risk', 'open', :concern, primary_caregiver_id, :assessment_id, :assessment_id,
+            SELECT id, :kind, 'open', :concern, primary_caregiver_id, :assessment_id, :assessment_id,
                    now() + make_interval(secs => :seconds)
             FROM patients WHERE id = :patient_id RETURNING id
         """), values)
@@ -85,15 +91,17 @@ async def update_risk_episode(conn: AsyncConnection, patient_id: UUID, assessmen
 
 ALERT_COLUMNS = "a.*, to_jsonb(first_a) AS original_assessment, to_jsonb(last_a) AS latest_assessment"
 ALERT_FROM = """
-    FROM alerts a JOIN assessments first_a ON first_a.id = a.original_assessment_id
-    JOIN assessments last_a ON last_a.id = a.latest_assessment_id
+    FROM alerts a LEFT JOIN assessments first_a ON first_a.id = a.original_assessment_id
+    LEFT JOIN assessments last_a ON last_a.id = a.latest_assessment_id
 """
 
 
 async def list_alerts(conn: AsyncConnection, patient_id: UUID | None = None,
                       assignee_id: UUID | None = None, status: Status | None = None,
-                      cursor: str | None = None, limit: int = 50) -> AlertPage:
+                      cursor: str | None = None, limit: int = 50, active_only: bool = False) -> AlertPage:
     query = f"SELECT {ALERT_COLUMNS} {ALERT_FROM} WHERE TRUE"
+    if active_only:
+        query += " AND a.status IN ('open','acknowledged')"
     values = {"count": limit + 1}
     for column, value in (("patient_id", patient_id), ("assignee_id", assignee_id), ("status", status)):
         if value is not None:

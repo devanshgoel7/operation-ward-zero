@@ -17,7 +17,7 @@ class Readiness(BaseModel):
 
 
 class HealthError(BaseModel):
-    code: Literal["database_unavailable", "migrations_pending"]
+    code: Literal["database_unavailable", "migrations_pending", "worker_overdue"]
     message: str
     details: dict[str, str]
 
@@ -25,7 +25,7 @@ class HealthError(BaseModel):
 class Unready(BaseModel):
     status: Literal["unready"] = "unready"
     database: Literal["available", "unavailable"]
-    migrations: Literal["pending", "unknown"]
+    migrations: Literal["pending", "unknown", "current"]
     worker_last_success_at: datetime | None = None
     error: HealthError
     request_id: UUID

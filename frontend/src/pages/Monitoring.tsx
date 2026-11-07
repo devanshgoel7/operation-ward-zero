@@ -7,10 +7,17 @@ function timestamp(value: string) {
   return <time dateTime={value}>{new Date(value).toLocaleString()}</time>;
 }
 
-function PatientCard({ patient, latest_reading: reading, current_assessment: assessment }: PatientSnapshot) {
+function PatientCard({ snapshot, offline }: { snapshot: PatientSnapshot; offline: boolean }) {
+  const { patient, latest_reading: reading, data_quality: quality } = snapshot;
+  const assessment = offline ? null : snapshot.current_assessment;
+  const showLastKnown = offline || !assessment || assessment.concern === null;
   return (
     <article data-reading-id={reading?.reading_id}>
       <h2>{patient.display_name}</h2>
+      <p>Data quality · <strong>{offline ? "Refresh unavailable" : quality}</strong></p>
+      {snapshot.delivery_delayed && <p>Delayed delivery · over 10 seconds</p>}
+      {showLastKnown && snapshot.last_known_concern && snapshot.last_known_observed_at &&
+        <p>Last known concern · {snapshot.last_known_concern} at {timestamp(snapshot.last_known_observed_at)}</p>}
       {reading && assessment?.reading_id === reading.reading_id &&
         (assessment.concern === "watch" || assessment.concern === "high") &&
         <span className="severity" data-level={assessment.concern}>{assessment.concern} concern</span>}
@@ -34,7 +41,7 @@ function PatientCard({ patient, latest_reading: reading, current_assessment: ass
 
 export function Monitoring() {
   const query = useQuery({
-    queryKey: ["dashboard"], queryFn: fetchDashboard, refetchInterval: 5000, retry: false,
+    queryKey: ["dashboard"], queryFn: fetchDashboard, refetchInterval: 5000, retry: false, networkMode: "always",
   });
   return <>
     <header>
@@ -49,7 +56,7 @@ export function Monitoring() {
       {query.isPending && <p role="status">Loading patients…</p>}
       {query.isError && <p role="alert">Refresh failed. Last received readings are shown when available.</p>}
       <div className="patients">{query.data?.patients.map(snapshot =>
-        <PatientCard key={snapshot.patient.id} {...snapshot} />)}</div>
+        <PatientCard key={snapshot.patient.id} snapshot={snapshot} offline={query.isError} />)}</div>
       {query.data && <RiskAlerts dashboard={query.data}/>}
       <EnvironmentStatus />
     </main>

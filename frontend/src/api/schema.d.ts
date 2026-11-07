@@ -183,14 +183,14 @@ export interface components {
             patient_id: string;
             /**
              * Kind
-             * @constant
+             * @enum {string}
              */
-            kind: "risk";
+            kind: "risk" | "delayed_review" | "monitoring_gap";
             /**
              * Status
              * @enum {string}
              */
-            status: "open" | "acknowledged";
+            status: "open" | "acknowledged" | "resolved";
             /**
              * Peak Priority
              * @enum {string}
@@ -210,8 +210,10 @@ export interface components {
             acknowledged_at: string | null;
             /** Acknowledged By */
             acknowledged_by: string | null;
-            original_assessment: components["schemas"]["Assessment"];
-            latest_assessment: components["schemas"]["Assessment"];
+            /** Resolved At */
+            resolved_at: string | null;
+            original_assessment: components["schemas"]["Assessment"] | null;
+            latest_assessment: components["schemas"]["Assessment"] | null;
             /** Revision */
             revision: number;
         };
@@ -229,14 +231,14 @@ export interface components {
             patient_id: string;
             /**
              * Kind
-             * @constant
+             * @enum {string}
              */
-            kind: "risk";
+            kind: "risk" | "delayed_review" | "monitoring_gap";
             /**
              * Status
              * @enum {string}
              */
-            status: "open" | "acknowledged";
+            status: "open" | "acknowledged" | "resolved";
             /**
              * Peak Priority
              * @enum {string}
@@ -256,8 +258,10 @@ export interface components {
             acknowledged_at: string | null;
             /** Acknowledged By */
             acknowledged_by: string | null;
-            original_assessment: components["schemas"]["Assessment"];
-            latest_assessment: components["schemas"]["Assessment"];
+            /** Resolved At */
+            resolved_at: string | null;
+            original_assessment: components["schemas"]["Assessment"] | null;
+            latest_assessment: components["schemas"]["Assessment"] | null;
             /** Revision */
             revision: number;
             /** Events */
@@ -274,7 +278,7 @@ export interface components {
              * Event Type
              * @enum {string}
              */
-            event_type: "opened" | "updated" | "acknowledged" | "reopened" | "escalated";
+            event_type: "opened" | "updated" | "acknowledged" | "reopened" | "escalated" | "resolved";
             /** Assessment Id */
             assessment_id: string | null;
             /** Caregiver Id */
@@ -409,7 +413,7 @@ export interface components {
              * Code
              * @enum {string}
              */
-            code: "database_unavailable" | "migrations_pending";
+            code: "database_unavailable" | "migrations_pending" | "worker_overdue";
             /** Message */
             message: string;
             /** Details */
@@ -456,6 +460,17 @@ export interface components {
             patient: components["schemas"]["Patient"];
             latest_reading: components["schemas"]["StoredReading"] | null;
             current_assessment: components["schemas"]["Assessment"] | null;
+            /**
+             * Data Quality
+             * @enum {string}
+             */
+            data_quality: "fresh" | "incomplete" | "stale" | "unavailable";
+            /** Last Known Concern */
+            last_known_concern: ("none" | "watch" | "high") | null;
+            /** Last Known Observed At */
+            last_known_observed_at: string | null;
+            /** Delivery Delayed */
+            delivery_delayed: boolean;
         };
         /** Readiness */
         Readiness: {
@@ -594,7 +609,7 @@ export interface components {
              * Migrations
              * @enum {string}
              */
-            migrations: "pending" | "unknown";
+            migrations: "pending" | "unknown" | "current";
             /** Worker Last Success At */
             worker_last_success_at?: string | null;
             error: components["schemas"]["HealthError"];
@@ -877,7 +892,7 @@ export interface operations {
             query?: {
                 patient_id?: string | null;
                 assignee_id?: string | null;
-                status?: ("open" | "acknowledged") | null;
+                status?: ("open" | "acknowledged" | "resolved") | null;
                 cursor?: string | null;
                 limit?: number;
             };

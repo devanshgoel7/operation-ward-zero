@@ -24,11 +24,12 @@ def test_health_responses() -> None:
         assert live.json() == {"status": "live"}
         ready = client.get("/health/ready")
         assert ready.status_code == 200
-        assert ready.json() == {
+        body = ready.json()
+        assert body.pop("worker_last_success_at")
+        assert body == {
             "status": "ready",
             "database": "available",
             "migrations": "current",
-            "worker_last_success_at": None,
         }
 
 

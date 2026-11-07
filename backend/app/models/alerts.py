@@ -4,7 +4,7 @@ from uuid import UUID
 from pydantic import AwareDatetime, BaseModel, ConfigDict
 
 Priority = Literal["watch", "high"]
-Status = Literal["open", "acknowledged"]
+Status = Literal["open", "acknowledged", "resolved"]
 
 
 class Finding(BaseModel):
@@ -33,21 +33,22 @@ class Assessment(BaseModel):
 class Alert(BaseModel):
     id: UUID
     patient_id: UUID
-    kind: Literal["risk"]
+    kind: Literal["risk", "delayed_review", "monitoring_gap"]
     status: Status
     peak_priority: Priority
     assignee_id: UUID
     opened_at: AwareDatetime
     acknowledged_at: AwareDatetime | None
     acknowledged_by: UUID | None
-    original_assessment: Assessment
-    latest_assessment: Assessment
+    resolved_at: AwareDatetime | None
+    original_assessment: Assessment | None
+    latest_assessment: Assessment | None
     revision: int
 
 
 class AlertEvent(BaseModel):
     id: UUID
-    event_type: Literal["opened", "updated", "acknowledged", "reopened", "escalated"]
+    event_type: Literal["opened", "updated", "acknowledged", "reopened", "escalated", "resolved"]
     assessment_id: UUID | None
     caregiver_id: UUID | None
     occurred_at: AwareDatetime

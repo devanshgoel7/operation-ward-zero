@@ -64,7 +64,35 @@ The [running OpenAPI contract](http://127.0.0.1:8010/docs) lists fields, units a
 | `GET /api/v1/patients/{patient_id}` | Returns the registered patient, device and latest reading by observation time. |
 | `GET /api/v1/patients/{patient_id}/readings` | Returns newest-first history. Use timezone-aware `from` and `to`, a `limit` (default 500, maximum 2,000) and the returned `next_cursor`. The default interval is the last 30 minutes. |
 
-The M1 simulator keeps every frame in its named volume, including the original payload, delivery status and attempt metadata. It retries the oldest pending frame with delays of 1, 2, 4, 8 and then 15 seconds. A failed upload stays pending and can hold up newer uploads while sampling continues. Retry classification and quarantine are scheduled for M3.
+The simulator keeps every frame in its named volume, including its original payload, delivery status and attempt metadata. Sampling continues while the oldest pending upload retries. Network errors, unconfirmed receipts, HTTP 408, 429 and server errors back off with jitter up to 15 seconds. A longer Retry-After takes precedence. Other 4xx responses quarantine that frame and allow the next upload to proceed.
+
+## Verify M3
+
+From the repository root, with Docker Desktop running and the local environment configured, run the following checks. The failure matrix uses host Python 3.11+ and Docker Compose. It creates its own project and loopback port, stops its services afterward, and prints the project name so you can inspect its volumes.
+
+```powershell
+python scripts/test-recovery.py
+docker compose exec -T app python -m pytest -q
+docker compose exec -T simulator python -m unittest discover -s simulator
+docker compose exec -T simulator python -m simulator.recovery status
+```
+
+The matrix disconnects the simulator from its Docker network, stops the app, restarts the simulator during that outage, and stops PostgreSQL. A local HTTP proxy receives a real committed response from FastAPI and closes its downstream connection before delivering it. The test checks the retried reading, assessment and audit event in PostgreSQL.
+
+For a manual ID comparison on a simulator-only dataset, freeze sampling first. The verifier reads every server UUID on stdin and reports missing, unexpected and overlapping IDs. The strict check requires every generated frame to be accepted. Omit `--require-drained` to inspect a mixed pending/quarantined fixture. Run `status` for retained error reasons and retry times.
+
+```powershell
+docker compose stop simulator
+docker compose run --rm -T --no-deps simulator python -m simulator.recovery drain
+$serverIds = docker compose exec -T db psql -v ON_ERROR_STOP=1 -U wardzero -Atc 'SELECT id FROM readings'
+if ($LASTEXITCODE -ne 0) { throw 'Could not read server IDs.' }
+$serverIds | docker compose run --rm -T --no-deps simulator python -m simulator.recovery verify --require-drained
+docker compose start simulator
+```
+
+On the dashboard, a delivery over ten seconds late is labelled. After 30 seconds without a complete observation the worker opens one monitoring gap. Three consecutive fresh complete frames close it. The card shows the last known concern and observation time when assessment is unavailable. A recent incomplete reading can still raise high concern. Historical breaches accumulate in a separate delayed-review episode with their original observation times.
+
+For the browser regression, use Node with Playwright and Microsoft Edge available. Start a separate populated QA stack with `$env:APP_PORT='18013'; docker compose -p wardzero-m3-check up --build -d --wait`, then run `node scripts/test-quality-ui.cjs wardzero-m3-check`. This fixture pauses and restores its simulator and writes synthetic readings directly through the ingestion API. Use the recovery matrix's separate dataset for exact simulator-ID comparisons.
 
 ## Verify M2
 
@@ -126,10 +154,10 @@ Both health routes take a GET request with no body or credentials. The running s
 | Request | HTTP | Response |
 |---|---|---|
 | `GET /health/live` | 200 | `{"status":"live"}` while the process can serve requests |
-| `GET /health/ready` | 200 | `{"status":"ready","database":"available","migrations":"current","worker_last_success_at":null}` |
+| `GET /health/ready` | 200 | `{"status":"ready","database":"available","migrations":"current","worker_last_success_at":"<UTC timestamp>"}` |
 | `GET /health/ready` | 503 | `status: unready`, `database`, `migrations`, nullable `worker_last_success_at`, UUID `request_id`, and `error` containing `code`, `message`, and `details` |
 
-Readiness queries PostgreSQL on each request and compares its applied heads to the packaged migration scripts. An unavailable database returns `database_unavailable` and migration state `unknown`. An available database with a different revision returns `migrations_pending`. The worker timestamp is null until a milestone introduces periodic work.
+Readiness queries PostgreSQL on each request and compares its applied heads to the packaged migration scripts. An unavailable database returns `database_unavailable` and migration state `unknown`. An available database with a different revision returns `migrations_pending`. The worker checks freshness and saved deadlines at startup and every five seconds. Readiness returns 503 with `worker_overdue` when its last successful pass is over 15 seconds old.
 
 The planned reading, assessment and alert request/response contracts are in the [architecture](docs/ARCHITECTURE.md#public-interfaces). The [implementation plan](docs/IMPLEMENTATION_PLAN.md) tracks when each becomes available.
 
