@@ -10,9 +10,10 @@ from app.services.alerts import assess_reading
 from app.services.quality import FRESHNESS
 from app.services.errors import MonitoringError
 from app.services.context import active_observations
+from app.services.realtime import RealtimeHub, notify
 
 
-async def ingest(engine: AsyncEngine, reading: ReadingInput) -> Receipt:
+async def ingest(engine: AsyncEngine, reading: ReadingInput, hub: RealtimeHub | None = None) -> Receipt:
     values = reading.model_dump()
     values["payload_hash"] = hashlib.sha256(reading.model_dump_json().encode()).hexdigest()
     async with engine.begin() as conn:
@@ -49,6 +50,9 @@ async def ingest(engine: AsyncEngine, reading: ReadingInput) -> Receipt:
             """), values)
             assessment_id = await assess_reading(conn, reading, patient_id, received, newest is not None)
             disposition = "accepted"
+    if disposition == "accepted":
+        notify(hub, "patient.updated", patient_id=patient_id)
+        notify(hub, "alert.updated", patient_id=patient_id)
     return Receipt(reading_id=reading.reading_id, received_at=received, disposition=disposition,
                    assessment_id=assessment_id)
 

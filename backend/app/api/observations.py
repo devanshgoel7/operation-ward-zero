@@ -16,7 +16,8 @@ router = APIRouter(prefix="/api/v1", responses={
 @router.post("/patients/{patient_id}/observations", status_code=201, responses={200: {"model": ObservationReceipt}})
 async def post_observation(patient_id: UUID, body: ObservationInput, request: Request, response: Response,
                            x_demo_caregiver_id: Annotated[UUID, Header()]) -> ObservationReceipt:
-    receipt, replay = await record_observation(request.app.state.engine, patient_id, x_demo_caregiver_id, body)
+    receipt, replay = await record_observation(request.app.state.engine, patient_id, x_demo_caregiver_id, body,
+                                             hub=request.app.state.realtime)
     if replay:
         response.status_code = 200
     return receipt

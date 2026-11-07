@@ -62,7 +62,7 @@ def authenticate(key: Annotated[str | None, Depends(key_header)]) -> None:
 @router.post("/readings", status_code=201, dependencies=[Depends(authenticate)],
              responses={200: {"model": Receipt}, 403: {"model": ErrorEnvelope}, 409: {"model": ErrorEnvelope}})
 async def post_reading(reading: ReadingInput, request: Request, response: Response) -> Receipt:
-    receipt = await ingest(request.app.state.engine, reading)
+    receipt = await ingest(request.app.state.engine, reading, hub=request.app.state.realtime)
     if receipt.disposition == "duplicate":
         response.status_code = 200
     return receipt

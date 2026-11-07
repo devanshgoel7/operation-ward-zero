@@ -1,6 +1,6 @@
 # Operation Ward Zero
 
-The local dashboard shows synthetic vital signs for three fictional adults. Each home monitor samples every five seconds. The simulator commits frames to SQLite before sending them to FastAPI. PostgreSQL stores accepted readings and the dashboard polls for the latest observation every five seconds.
+The local dashboard shows synthetic vital signs for three fictional adults. Each home monitor samples every five seconds. The simulator commits frames to SQLite before sending them to FastAPI. PostgreSQL stores accepted readings. WebSocket hints refresh the dashboard after commits; REST polling continues every 15 seconds when connected and every five seconds otherwise.
 
 ## Project layout
 
@@ -16,6 +16,8 @@ backend/
     services/trends.py         Median windows and continuity eligibility
     services/context.py        Active observations and combination findings
     services/observations.py   Transactional capture, replay and expiry
+    services/realtime.py       Bounded connection queues and best-effort update hints
+    api/realtime.py            WebSocket delivery, heartbeat and cleanup
     models/monitoring.py       Reading validation and monitoring contracts
     services/health.py         Database and migration readiness checks
     models/health.py           Typed health response contracts
@@ -26,7 +28,8 @@ frontend/src/
   main.tsx                     React startup and query provider
   api/health.ts                Readiness request
   api/monitoring.ts            Dashboard request with generated OpenAPI types
-  pages/Monitoring.tsx         Polling patient cards
+  api/Realtime.tsx             Reconnection, REST reconciliation and polling intervals
+  pages/Monitoring.tsx         Patient cards and synchronization state
   pages/PatientContext.tsx     History chart, trend evidence and observation form
   pages/EnvironmentStatus.tsx  Environment screen
   styles/global.css            Shell styles
@@ -69,6 +72,33 @@ The [running OpenAPI contract](http://127.0.0.1:8010/docs) lists fields, units a
 | `GET /api/v1/patients/{patient_id}/readings` | Returns newest-first history. Use timezone-aware `from` and `to`, a `limit` (default 500, maximum 2,000) and the returned `next_cursor`. The default interval is the last 30 minutes. |
 
 The simulator keeps every frame in its named volume, including its original payload, delivery status and attempt metadata. Sampling continues while the oldest pending upload retries. Network errors, unconfirmed receipts, HTTP 408, 429 and server errors back off with jitter up to 15 seconds. A longer Retry-After takes precedence. Other 4xx responses quarantine that frame and allow the next upload to proceed.
+
+## Verify M6
+
+M6 adds live update hints and dashboard usability improvements to the existing monitoring and caregiver workflows. Start or upgrade with `docker compose up --build --wait --wait-timeout 120`. No migration was added; the head remains `0008_resolution`. Existing volumes and evidence are preserved.
+
+On the [dashboard](http://127.0.0.1:8010/), **Live updates connected** indicates the WebSocket transport is available. The banner separately shows the last successful REST refresh. Connections and reconnections reload saved dashboard, selected history and visible alert queries. WebSocket messages contain only invalidation hints, never authoritative patient state or proof of caregiver acknowledgement. Polling remains active at 15 seconds when connected and five seconds otherwise. Silent connections are detected after 25 seconds without a valid message; reconnection backs off from one to 15 seconds. REST requests time out after eight seconds.
+
+If refreshing fails, cards and panels identify cached, unverified state. The server continues to distinguish fresh, incomplete, stale and unavailable patient data. **Refresh now** retries the dashboard query. An unconfirmed acknowledgement, observation or resolution retains its original command/payload through reload in session storage. Select the same caregiver and patient, and use the saved retry action; a possibly committed action is never undone by a discarded draft. The resolved-alert list also preserves access to unconfirmed resolution retries.
+
+Use Tab to reach the skip link, selectors, buttons, notes and evidence/history disclosures, and Enter/Space to activate native controls. The history chart includes metric units, a textual latest value/range, visible individual points for single readings, and line breaks for missing measurements and gaps. The layout is verified at 1366×768.
+
+| Interface | M6 behavior |
+|---|---|
+| `WS /api/v1/ws` | Emits `patient.updated`, `alert.updated`, `system.status` and ten-second `heartbeat` messages with `server_time` and optional patient/alert IDs and revision. Hints follow transaction commit. |
+| Connection delivery | Each client has a 32-message outbound queue. Queue overflow or a three-second blocked send disconnects that client; ingestion never awaits a socket. REST reconciliation/polling recovers missed hints. |
+
+```powershell
+docker compose exec -T app python -m pytest -q
+docker compose exec -T simulator python -m unittest discover -s simulator
+docker compose exec -T app alembic current
+# Requires Node, Playwright and Microsoft Edge, as with the M4/M5 scripts.
+node scripts/test-realtime-ui.cjs
+node scripts/test-context-ui.cjs
+node scripts/test-lifecycle-ui.cjs
+```
+
+The M6 browser script creates its own Compose project, PostgreSQL volume and random loopback ports. A real TCP proxy cuts browser connections while the backend saves an alert, then restores transport to verify reconciliation. It also blocks only WebSockets to verify polling, pauses socket forwarding to verify heartbeat-loss detection, and restarts the real app. It checks commit-to-render timing, retained mutation payloads, a lost committed acknowledgement response, real staleness, keyboard actions and rendered chart dimensions. It saves `m6-browser-evidence.png` and `m6-disconnected-recovery-evidence.png`, stops the fixture services and retains the evidence volume. It does not alter the regular demo data. The regular build includes strict TypeScript and the production bundle check.
 
 ## Verify M5
 
@@ -166,7 +196,7 @@ Run `docker compose exec -T app python -m pytest -q` against the started stack. 
 docker compose exec -T simulator python -m simulator.trigger_alert
 ```
 
-On Mira's next three samples her simulated SpO₂ is 93% (Watch), followed by three at 88% (High). Each phase lasts about 15 seconds. The usual uploader sends each saved frame and the dashboard polls every five seconds. Show the latest alert evidence, then acknowledge as Alex Morgan. Sampling returns to baseline automatically, while the alert retains its peak and acknowledgement history.
+On Mira's next three samples her simulated SpO₂ is 93% (Watch), followed by three at 88% (High). Each phase lasts about 15 seconds. The usual uploader sends each saved frame and the dashboard refreshes through live hints with polling fallback. Show the latest alert evidence, then acknowledge as Alex Morgan. Sampling returns to baseline automatically, while the alert retains its peak and acknowledgement history.
 
 Without an argument, successive commands rotate through Mira, Aryan, Lena, then Mira again. The simulator saves the next patient in SQLite. Pass `mira`, `aryan`, or `lena` to target a patient explicitly. Each successful trigger advances to the following patient.
 
@@ -240,4 +270,4 @@ docker run --rm wardzero-m0-frontend npm run typecheck
 
 The frontend stage also runs the production build. The readiness script stops only this project's PostgreSQL service, checks that liveness stays at 200 and readiness returns 503, then restores the database and checks for 200. To check the browser, open the environment screen and verify the heading **Environment status** and the live text **Service ready**.
 
-Python dependencies, including the test runner, are pinned with hashes in `backend/requirements.lock`. The direct requirements are in `backend/requirements.in`. For an intentional update, run `uv pip compile --generate-hashes --no-annotate --output-file requirements.lock requirements.in` from `backend/` using Linux Python 3.13 and uv 0.8.22. Frontend versions are in `frontend/package.json` and `frontend/package-lock.json`. Image builds use `npm ci` and pin the base images by digest.
+Python dependencies, including the test runner, are pinned with hashes in `backend/requirements.lock`. The direct requirements are in `backend/requirements.txt`. For an intentional update, run `uv pip compile --generate-hashes --no-annotate --output-file requirements.lock requirements.txt` from `backend/` using Linux Python 3.13 and uv 0.8.22. M6 adds only `wsproto==1.3.2`, with its published wheel/source hashes; the container build verifies hashes and runs `pip check`. Frontend versions are in `frontend/package.json` and `frontend/package-lock.json`. Image builds use `npm ci` and pin the base images by digest.

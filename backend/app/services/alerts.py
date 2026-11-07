@@ -12,6 +12,7 @@ from app.services.trends import evaluate_trends
 from app.services.errors import MonitoringError
 from app.services.quality import FRESHNESS, record_quality
 from app.services.risk import RULE_VERSION, threshold_findings
+from app.services.realtime import RealtimeHub, notify
 
 
 async def assess_reading(conn: AsyncConnection, reading: ReadingInput, patient_id: UUID,
@@ -195,17 +196,18 @@ async def alert_detail(conn: AsyncConnection, alert_id: UUID) -> AlertDetail:
 
 
 async def acknowledge(engine: AsyncEngine, alert_id: UUID, actor: UUID, command_id: UUID,
-                      now: datetime | None = None) -> Alert:
-    return await caregiver_action(engine, alert_id, actor, command_id, "acknowledged", None, now)
+                      now: datetime | None = None, hub: RealtimeHub | None = None) -> Alert:
+    return await caregiver_action(engine, alert_id, actor, command_id, "acknowledged", None, now, hub)
 
 
 async def resolve(engine: AsyncEngine, alert_id: UUID, actor: UUID, body: Resolve,
-                  now: datetime | None = None) -> Alert:
-    return await caregiver_action(engine, alert_id, actor, body.command_id, "resolved", body.note, now)
+                  now: datetime | None = None, hub: RealtimeHub | None = None) -> Alert:
+    return await caregiver_action(engine, alert_id, actor, body.command_id, "resolved", body.note, now, hub)
 
 
 async def caregiver_action(engine: AsyncEngine, alert_id: UUID, actor: UUID, command_id: UUID,
-                           action: str, note: str | None, now: datetime | None) -> Alert:
+                           action: str, note: str | None, now: datetime | None,
+                           hub: RealtimeHub | None = None) -> Alert:
     values = {"id": alert_id, "actor": actor, "command": command_id, "action": action, "note": note}
     async with engine.begin() as conn:
         patient_id = await conn.scalar(text("""
@@ -261,11 +263,15 @@ async def caregiver_action(engine: AsyncEngine, alert_id: UUID, actor: UUID, com
                                values | {"details": json.dumps(details)})
         updated = (await conn.execute(text(f"SELECT {ALERT_COLUMNS} {ALERT_FROM} WHERE a.id=:id"),
                                       values)).mappings().one()
-        return Alert.model_validate(updated)
+        result = Alert.model_validate(updated)
+    if occurred is not None:
+        notify(hub, "alert.updated", patient_id=patient_id, alert_id=alert_id, revision=result.revision)
+    return result
 
 
-async def escalate_due(engine: AsyncEngine, now: datetime | None = None) -> None:
+async def escalate_due(engine: AsyncEngine, now: datetime | None = None, hub: RealtimeHub | None = None) -> None:
     now = now or datetime.now(UTC)
+    changed = []
     async with engine.begin() as conn:
         patients = await conn.scalars(text("""
             SELECT p.id FROM patients p WHERE EXISTS (SELECT 1 FROM alerts a WHERE
@@ -273,6 +279,7 @@ async def escalate_due(engine: AsyncEngine, now: datetime | None = None) -> None
             ORDER BY p.id FOR UPDATE
         """), {"now": now})
         for patient_id in patients:
+            changed.append(patient_id)
             await conn.execute(text("""
                 WITH moved AS (
                     UPDATE alerts a SET assignee_id=p.backup_caregiver_id, escalation_due_at=NULL,
@@ -282,3 +289,5 @@ async def escalate_due(engine: AsyncEngine, now: datetime | None = None) -> None
                 ) INSERT INTO alert_events (alert_id,event_type,caregiver_id,occurred_at)
                   SELECT id,'escalated',assignee_id,:now FROM moved
             """), {"patient": patient_id, "now": now})
+    for patient_id in changed:
+        notify(hub, "alert.updated", patient_id=patient_id)

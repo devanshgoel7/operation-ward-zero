@@ -4,6 +4,7 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import { fetchHistory, saveObservation, type ObservationInput, type PatientSnapshot } from "../api/monitoring";
 import type { components } from "../api/schema";
 import { Evidence } from "./RiskAlerts";
+import { useSync } from "../api/Realtime";
 
 const metrics = {
   spo2_pct: ["Oxygen saturation", "%"], heart_rate_bpm: ["Heart rate", "bpm"],
@@ -24,6 +25,7 @@ function ObservationForm({ snapshot, actor }: { snapshot: PatientSnapshot; actor
   const [note, setNote] = useState(saved?.note ?? "");
   const cache = useQueryClient();
   const action = useMutation({
+    networkMode: "always",
     mutationFn: (body: ObservationInput) => saveObservation(snapshot.patient.id, actor, body),
     onSuccess: async () => {
       sessionStorage.removeItem(key); setSaved(null); setNote("");
@@ -62,9 +64,10 @@ function ObservationForm({ snapshot, actor }: { snapshot: PatientSnapshot; actor
 }
 
 function History({ patientId }: { patientId: string }) {
+  const { interval } = useSync();
   const [metric, setMetric] = useState<Metric>("spo2_pct");
   const query = useQuery({ queryKey: ["history", patientId],
-    queryFn: ({ signal }) => fetchHistory(patientId, signal), refetchInterval: 5000, retry: false, networkMode: "always" });
+    queryFn: ({ signal }) => fetchHistory(patientId, signal), refetchInterval: interval, retry: false, networkMode: "always" });
   const rows = [...(query.data?.items ?? [])].reverse();
   const points: { time: number; value: number | null }[] = [];
   rows.forEach((reading, index) => {
@@ -84,32 +87,37 @@ function History({ patientId }: { patientId: string }) {
     {query.isError && <p role="alert">History refresh failed. Previously fetched history may be outdated.</p>}
     {query.data?.next_cursor && <p>Showing only the newest 2,000 readings in this interval.</p>}
     {!query.isPending && !query.isError && rows.length === 0 && <p>No readings in this interval.</p>}
-    {rows.length > 0 && <div className="history-chart" role="img" aria-label={`${metrics[metric][0]} history from stored readings`}>
+    {rows.length > 0 && <><p className="chart-summary">{metrics[metric][0]} · {metrics[metric][1]} · latest stored value: {rows.at(-1)?.[metric] ?? "Missing"}.
+      {" "}Range of available samples: {rows.some(row => row[metric] !== null)
+        ? `${Math.min(...rows.flatMap(row => row[metric] === null ? [] : [row[metric]!]))}–${Math.max(...rows.flatMap(row => row[metric] === null ? [] : [row[metric]!]))} ${metrics[metric][1]}` : "No measurements"}.</p>
+    <div className="history-chart" role="img" aria-label={`${metrics[metric][0]} history from stored readings`}>
       <ResponsiveContainer width="100%" height={250}>
         <LineChart data={points} margin={{ top: 15, right: 25, bottom: 5, left: 0 }}>
           <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="time" type="number" domain={["dataMin", "dataMax"]} tickFormatter={v => new Date(v).toLocaleTimeString()} />
+          <XAxis dataKey="time" type="number" domain={["dataMin", "dataMax"]} minTickGap={45}
+            tickFormatter={v => new Date(v).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} />
           <YAxis domain={["auto", "auto"]} width={60} unit={metrics[metric][1]} />
           <Tooltip labelFormatter={v => new Date(Number(v)).toLocaleString()} />
           <Line dataKey="value" name={metrics[metric][0]} unit={metrics[metric][1]} type="linear" stroke="#205e53"
-            dot={false} connectNulls={false} isAnimationActive={false}/>
+            dot={rows.length === 1 ? { r: 3 } : false} connectNulls={false} isAnimationActive={false}/>
         </LineChart>
       </ResponsiveContainer>
-    </div>}
+    </div></>}
   </div>;
 }
 
-export function PatientContext({ dashboard, actor }: { dashboard: components["schemas"]["Dashboard"]; actor: string }) {
+export function PatientContext({ dashboard, actor, outdated }: { dashboard: components["schemas"]["Dashboard"]; actor: string; outdated: boolean }) {
   const [selected, setSelected] = useState("");
   const snapshot = dashboard.patients.find(p => p.patient.id === selected) ?? dashboard.patients[0];
   if (!snapshot) return null;
   return <section className="context-panel" aria-labelledby="context-heading">
     <h2 id="context-heading">History and observations</h2>
+    {outdated && <p className="cached-warning">Cached context — trend findings and observation activity are unverified until refresh succeeds.</p>}
     <label>Selected patient <select value={snapshot.patient.id} onChange={e => setSelected(e.target.value)}>
       {dashboard.patients.map(p => <option key={p.patient.id} value={p.patient.id}>{p.patient.display_name}</option>)}
     </select></label>
     <History key={snapshot.patient.id} patientId={snapshot.patient.id}/>
-    <h3>Current trend context</h3>
+    <h3>{outdated ? "Last received trend context" : "Current trend context"}</h3>
     <p>Demonstration settings: adjacent one-minute medians, at least eight valid samples per window, no gap over ten seconds.</p>
     {(snapshot.current_assessment?.trend_summary ?? []).map(t => <div key={t.metric} className="trend-summary">
       <b>{metrics[t.metric as Metric]?.[0] ?? t.metric}</b>: {t.status === "calculated"
@@ -120,7 +128,7 @@ export function PatientContext({ dashboard, actor }: { dashboard: components["sc
     </div>)}
     {!snapshot.current_assessment && <p>Current assessment unavailable. History and active observations remain visible.</p>}
     {snapshot.current_assessment && <Evidence assessment={snapshot.current_assessment}/>}
-    <h3>Active observations</h3>
+    <h3>{outdated ? "Last received observations" : "Active observations"}</h3>
     {snapshot.active_observations.length === 0 && <p>No active structured observations.</p>}
     <ul>{snapshot.active_observations.map(o => <li className="source" key={o.observation_id}>
       <b>{tags[o.tag]}</b> · {dashboard.caregivers.find(c => c.id === o.caregiver_id)?.display_name}

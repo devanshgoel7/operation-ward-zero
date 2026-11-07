@@ -4,21 +4,22 @@ from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
+from app.services.realtime import RealtimeHub, notify
 
 FRESHNESS = timedelta(seconds=30)
 
 
-async def check_gap(conn: AsyncConnection, patient_id: UUID, now: datetime) -> None:
+async def check_gap(conn: AsyncConnection, patient_id: UUID, now: datetime) -> bool:
     values = {"id": patient_id, "now": now, "cutoff": now - FRESHNESS}
-    await conn.execute(text("""UPDATE alerts SET recovery_count=0,recovery_observed_at=NULL
+    reset = await conn.execute(text("""UPDATE alerts SET recovery_count=0,recovery_observed_at=NULL
         WHERE patient_id=:id AND kind='risk' AND status IN ('open','acknowledged')
           AND recovery_observed_at<:cutoff"""), values)
     overdue = await conn.scalar(text("""SELECT greatest(last_complete_at, monitoring_started_at) < :cutoff
         FROM patients WHERE id=:id"""), values)
     if not overdue:
-        return
+        return reset.rowcount > 0
     await conn.execute(text("UPDATE patients SET gap_recovery_count=0 WHERE id=:id AND gap_recovery_count>0"), values)
-    await conn.execute(text("""
+    opened = await conn.execute(text("""
         WITH opened AS (
             INSERT INTO alerts (patient_id, kind, status, peak_priority, assignee_id, escalation_due_at, opened_at,
                                 response_started_at)
@@ -27,13 +28,19 @@ async def check_gap(conn: AsyncConnection, patient_id: UUID, now: datetime) -> N
             ON CONFLICT (patient_id, kind) WHERE status IN ('open','acknowledged') DO NOTHING RETURNING id
         ) INSERT INTO alert_events (alert_id, event_type, occurred_at) SELECT id, 'opened', :now FROM opened
     """), values)
+    return reset.rowcount > 0 or opened.rowcount > 0
 
 
-async def check_freshness(engine: AsyncEngine, now: datetime) -> None:
+async def check_freshness(engine: AsyncEngine, now: datetime, hub: RealtimeHub | None = None) -> None:
+    changed = []
     async with engine.begin() as conn:
         patients = await conn.scalars(text("SELECT id FROM patients ORDER BY id FOR UPDATE"))
         for patient in patients:
-            await check_gap(conn, patient, now)
+            if await check_gap(conn, patient, now):
+                changed.append(patient)
+    for patient in changed:
+        notify(hub, "patient.updated", patient_id=patient)
+        notify(hub, "alert.updated", patient_id=patient)
 
 
 async def record_quality(conn: AsyncConnection, patient_id: UUID, observed: datetime, now: datetime,

@@ -1,10 +1,11 @@
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Monitoring } from "./pages/Monitoring";
+import { RealtimeProvider } from "./api/Realtime";
 import "./styles/global.css";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing application root");
 createRoot(root).render(
-  <QueryClientProvider client={new QueryClient()}><Monitoring /></QueryClientProvider>,
+  <QueryClientProvider client={new QueryClient()}><RealtimeProvider><Monitoring /></RealtimeProvider></QueryClientProvider>,
 );

@@ -1,12 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { checkReadiness } from "../api/health";
+import { useSync } from "../api/Realtime";
 
 export function EnvironmentStatus() {
+  const { interval } = useSync();
   const query = useQuery({
     queryKey: ["readiness"],
     queryFn: checkReadiness,
     retry: false,
-    refetchInterval: 15000,
+    refetchInterval: interval, networkMode: "always",
   });
   const status = query.isError ? "Service unreachable" : query.data ?? "Checking service…";
   return (

@@ -4,13 +4,15 @@ Updated 2026-11-07. Read [AGENTS.md](../AGENTS.md) before work. The approved beh
 
 ## Current state
 
-M0 through M5 are complete. The simulator retains frames across transport and service outages. PostgreSQL stores threshold/trend/observation evidence, monitoring gaps, delayed-review episodes and the complete caregiver lifecycle. The polling dashboard provides context, backup escalation, acknowledgement, recovery progress, resolution and saved response history. The [M5 walkthrough](../README.md#verify-m5) describes the implemented workflow and verification. The user authorized M5 only, then authorized a local commit after the uncommitted handoff. No push is authorized.
+M0 through M6 are complete. The simulator retains frames across transport and service outages. PostgreSQL stores threshold/trend/observation evidence, monitoring gaps, delayed-review episodes and the complete caregiver lifecycle. The dashboard adds post-commit WebSocket hints, REST reconciliation, retained polling, synchronization/cached-data states and keyboard/chart improvements to the existing caregiver workflow. The [M6 walkthrough](../README.md#verify-m6) describes the implemented behavior and verification. The user approved the M6 plan before edits and prohibited commits. All M6 work remains uncommitted; M7 is not authorized.
 
 The workspace was empty when documentation creation began. During planning on 2026-11-05, Python and Node were absent from the inspected shell PATH. Docker CLI was present, its daemon was unreachable, and its user configuration could not be read in that session. Recheck these observations during M0. They do not establish the machine's permanent configuration.
 
-The M0 through M5 sections record executed checks. Earlier commit authorizations remain historical entries in the handoff log. M5 is complete; the user subsequently authorized a local commit without pushing. M6 and M7 remain pending and were not started.
+The M0 through M6 sections record executed checks. Earlier commit authorizations remain historical entries in the handoff log. M5 remains complete and its lifecycle/restart regression passed on M6. Its prior local commit is preserved. M6 is complete without a commit, as requested. M7 remains pending and was not started.
 
 ## Budget and priorities
+
+**Subsequent M6 authorization, 2026-11-07.** After the uncommitted handoff recorded above, the user authorized committing the completed M6 changes and pushing the current branch to the configured repository. This supersedes the earlier no-commit restriction for M6. Existing verification evidence remains applicable; the pre-commit diff check passed. No M7 implementation was authorized.
 
 The budget is 48 development hours, with 40 planned hours and eight contingency hours. P0 includes monitoring, durable ingestion, threshold rules, data quality, trends, observations, alerts, acknowledgement, escalation, resolution, dashboard, and actual failure recovery. Competitive differentiation comes from depth in these capabilities.
 
@@ -23,8 +25,8 @@ P1, after P0 passes, includes a compact reliability export, connection-gap visua
 | M2 Explained alerts and acknowledgement | 6 | 15 | Complete |
 | M3 Failure recovery and data quality | 7 | 22 | Complete |
 | M4 Historical trends and observations | 5 | 27 | Complete — local commit authorized; no push |
-| M5 Escalation and lifecycle completion | 4 | 31 | Complete — verified; local commit authorized; no push |
-| M6 Real-time dashboard polish | 5 | 36 | Pending |
+| M5 Escalation and lifecycle completion | 4 | 31 | Complete — M6 regression passed; prior local commit preserved |
+| M6 Real-time dashboard polish | 5 | 36 | Complete — verified; commit and push authorized |
 | M7 Full verification and submission | 4 | 40 | Pending |
 | Contingency | 8 | 48 | Reserved |
 
@@ -208,13 +210,32 @@ Review added coverage for an incomplete frame concealing a renewed priority rise
 
 Depends on M5. Implement WebSocket invalidation, reconciliation, fallback polling, readable charts, accessible actions, status banners, and loading/error states. Likely areas are realtime, frontend queries, components, and styles.
 
-- [ ] Committed changes normally display within two seconds on the demo laptop.
-- [ ] Reconnection restores missed alerts from PostgreSQL.
-- [ ] Failed mutations retain drafts and display errors.
-- [ ] Stale/unknown data is clearly identified.
-- [ ] The page is usable at a standard laptop viewport with keyboard-accessible actions.
+**Approved implementation plan, executed 2026-11-07.** The user approved the read-only inspection plan before edits and authorized M6 only, without commits. Preserve the implemented M0–M5 features. Add `/api/v1/ws` with post-commit hints, ten-second heartbeats, bounded queues and slow-client cleanup; retain one worker and the existing periodic loop. Reconcile existing REST queries on connection/reconnection, retain 15-second connected and five-second disconnected polling, and expose synchronization/cached-data states. Polish the existing charts, forms and keyboard/laptop layout. Verify post-commit/rollback behavior, queue isolation, real browser reconnect, polling fallback, two-second display latency, mutation retries, stale rendering and the caregiver flow. Run backend/simulator and M4/M5 browser regressions, typecheck/build and documentation checks. Use isolated loopback Compose fixtures and preserve volumes. M5 remains complete; record its regression evidence alongside M6 results. M7 is not authorized.
+
+- [x] Committed changes normally display within two seconds on the demo laptop.
+- [x] Reconnection restores missed alerts from PostgreSQL.
+- [x] Failed mutations retain drafts and display errors.
+- [x] Stale/unknown data is clearly identified.
+- [x] The page is usable at a standard laptop viewport with keyboard-accessible actions.
 
 Run UI mutation/error tests, stale rendering checks, reconnect tests, typecheck/build, and a Playwright caregiver flow. Demonstrate the complete workflow through the finished dashboard. Done requires the common gate and usable disconnected/reconnected states.
+
+**Verification on 2026-11-07.** All five M6 criteria passed. Existing transactions, thresholds/context, recovery rules, persistence and caregiver attribution remain authoritative. No migration, frontend dependency, service or additional periodic worker was added. The only runtime dependency addition is hash-pinned `wsproto==1.3.2`. The [README](../README.md#verify-m6) documents live updates, fallback, retry behavior and reproducible checks.
+
+| Check run | Observed result |
+|---|---|
+| `docker compose -p wardzero-m6-check up -d --build --wait app` with `APP_PORT=18016` | Isolated app/database healthy. Strict TypeScript and Vite production build passed. Dependency hashes and `pip check` passed. The final M6 browser fixture also rebuilt the final frontend successfully. |
+| `docker compose -p wardzero-m6-check exec -T app python -m pytest -q` | **92 passed** on real PostgreSQL: all 83 prior tests plus nine realtime cases. Separate-connection inspection confirms a reading is committed at hint publication; rejected audit writes emit no reading hint; publication failure preserves successful receipts. Covers observation/acknowledgement/resolution hints, silent identical retries, rejected resolution, periodic gap/expiry/escalation transitions, repeated checks, multi-client delivery, heartbeat, queue overflow, blocked sends and connection cleanup. |
+| `docker compose -p wardzero-m6-check run --rm --no-deps --build simulator python -m unittest discover -s simulator` | **6 passed**. Durable SQLite/retry/quarantine/identifier behavior remains intact. Expected synthetic outage/quarantine messages appeared. |
+| `node scripts/test-realtime-ui.cjs` with bundled Node/Playwright and headless Edge | Final project `wardzero-m6-ui-1794072605298` passed. Reading-to-render upper bounds, including request overhead: **985, 913 and 948 ms**. New alert: **795 ms**. Externally saved observation clear: **98 ms**. All under two seconds. |
+| Transport and UI checks in the same M6 script | A real TCP proxy severed browser transport while the backend committed a new alert. The UI displayed refresh failure and cached/unknown state; reconnection restored the saved alert, latest reading and selected history through REST. WebSocket-only failure retained working polling. Pausing socket forwarding tested silent heartbeat loss and automatic recovery. Real app restart restored the connection and preserved resolved history. |
+| Mutation, rendering and keyboard checks in the same M6 script | Dropped an actual committed acknowledgement response; reload/retry reused its command with one PostgreSQL event. Failed observation/resolution submissions retained exact payloads and notes through reload. Keyboard navigation activated the skip link, metric selector, acknowledgement and lifecycle disclosure. Verified unavailable/incomplete/real stale states, last-known concern, readable chart dimensions, no horizontal page overflow at **1366×768**, and zero browser page errors. Inspected screenshots `m6-browser-evidence.png` and the corrected chart render. |
+| `node scripts/test-context-ui.cjs` after the chart correction | **M4 browser regression passed**, project `wardzero-m4-ui-1794045400209`: both trends, visible stored-reading chart, combination High, clearing, attribution, literal notes, lost-response replay and real restart expiry. Added an actual SVG-dimension assertion so hidden zero-width plots cannot pass solely because chart markup exists. |
+| `node scripts/test-lifecycle-ui.cjs` against the final reconnect implementation | **M5 browser/restart regression passed**, project `wardzero-m5-ui-1794072705163`. Primary timeout processed **593 ms** after its saved deadline. Completed backup acknowledgement, premature-resolution rejection, recovery, resolution, lost-response retry and saved response timing/history. Restart processed an overdue escalation once; a second restart preserved one escalation and unchanged resolved history. **M5 remains complete.** |
+| `docker compose up -d --build --wait app`, `docker compose exec -T app alembic current`, `docker compose config -q`, and a read-only Edge smoke check | Main app healthy at **127.0.0.1:8010**, OpenAPI version `0.6.0`, migration **0008_resolution (head)** and valid Compose configuration. Browser showed live connection, all three reading IDs advanced, chart width **1126 px**, no horizontal overflow and no page errors. Existing main volumes preserved. |
+| Local Markdown/UTF-8 validation, `git diff --check`, and `docker compose -p wardzero-m6-check down` | All **22** local Markdown links/anchors across the five project documents passed; frontend/document text decoded correctly. Diff check passed. Isolated M6 inspection services stopped; all fixture evidence volumes retained. The main stack and pre-existing auxiliary stacks were left intact. |
+
+Review found and corrected three issues: the first M6 browser fixture assumed command IDs were exposed in the alert-history API (it now verifies PostgreSQL directly); a new CSS width limit hid Recharts' plot despite existing SVG markup (removed and covered by dimension checks); and a silent peer delayed the browser close handshake (the watchdog now enters fallback immediately). The final M6 suite passed after these corrections. Existing non-failing Starlette deprecation and Vite directive/chunk-size warnings remain. The common completion gate's commit step is waived by the user's explicit no-commit instruction. M7's full outage rehearsal, submission/tag and recording work were not started.
 
 ### M7 — Full verification and submission
 
@@ -305,3 +326,5 @@ Future entries should include milestone status, actual commands/results, outstan
 **2026-11-07 — M5 handoff.** Completed all six M5 criteria and the caregiver primary timeout → backup acknowledgement → recovery → resolution demonstration. Final evidence: 83 backend tests, six simulator tests, strict TypeScript/build, M5 browser/restart/lost-response checks and M4 browser regression passed. Saved lifecycle history and response timing survive restart. The regular dashboard runs at port 8010 with persistent volumes preserved. No open failures or blockers; all M5 changes remain uncommitted. The next planned step is M6, requiring separate authorization; no M6 or M7 implementation was started.
 
 **2026-11-07 - M5 commit authorization.** The user authorized committing the completed M5 implementation, tests and documentation locally, with no push. The verification evidence above remains applicable; the pre-commit diff check passed. No further milestone work was authorized.
+
+**2026-11-07 — M6 handoff.** The user approved the plan before edits. Completed all five M6 criteria with post-commit live hints, REST reconciliation, polling fallback, cached/unknown status, retained mutation retries and chart/keyboard improvements. Evidence: 92 backend tests, six simulator tests, strict TypeScript/build, the full M6 transport/mutation/staleness/keyboard/restart browser suite, M4 chart/context regression and M5 caregiver lifecycle/restart regression passed. Measured reading updates were 913–985 ms in the final run; alert and observation updates were also under two seconds. Documentation/UTF-8 and all 22 local links passed, as did the diff check. M5 remains complete with its prior commit preserved. Main dashboard is healthy at port 8010 with existing volumes intact; M6 fixtures are stopped with evidence retained. No open M6 failures or blockers. All M6 changes are uncommitted at the user's request. M7 was not started and requires separate authorization; no next milestone is authorized.

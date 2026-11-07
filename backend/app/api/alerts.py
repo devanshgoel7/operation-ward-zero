@@ -29,7 +29,8 @@ async def detail(alert_id: UUID, request: Request) -> AlertDetail:
 })
 async def acknowledge_alert(alert_id: UUID, body: Acknowledge, request: Request,
                             x_demo_caregiver_id: Annotated[UUID, Header()]) -> Alert:
-    return await acknowledge(request.app.state.engine, alert_id, x_demo_caregiver_id, body.command_id)
+    return await acknowledge(request.app.state.engine, alert_id, x_demo_caregiver_id, body.command_id,
+                             hub=request.app.state.realtime)
 
 
 @router.post("/{alert_id}/resolve", responses={
@@ -37,4 +38,5 @@ async def acknowledge_alert(alert_id: UUID, body: Acknowledge, request: Request,
 })
 async def resolve_alert(alert_id: UUID, body: Resolve, request: Request,
                         x_demo_caregiver_id: Annotated[UUID, Header()]) -> Alert:
-    return await resolve(request.app.state.engine, alert_id, x_demo_caregiver_id, body)
+    return await resolve(request.app.state.engine, alert_id, x_demo_caregiver_id, body,
+                         hub=request.app.state.realtime)

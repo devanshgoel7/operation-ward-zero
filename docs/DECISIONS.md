@@ -64,6 +64,8 @@ Accepted. Run one Uvicorn worker. Use WebSockets for invalidation, bounded clien
 
 This supports the small demo without shared connection infrastructure. PostgreSQL remains authoritative if notifications are missed. Polling is built first, allowing the workflow to function before realtime polish. Future multi-worker deployment requires a separate coordination design.
 
+M6 implementation note, 2026-11-07. Add a process-local connection hub and the pinned `wsproto` transport while preserving one Uvicorn worker and the existing periodic loop. Transaction-owning services publish only after commit; the helper logs notification failure without changing a saved result. Bound each connection to 32 queued messages and a three-second send wait. Keep ten-second heartbeats, REST reconciliation, 15/five-second polling, and explicit cached-data states. A 25-second missing-message watchdog switches to fallback immediately rather than waiting for a silent peer's close handshake. Batch invalidations for 80 milliseconds and serialize follow-up batches to avoid losing updates during an in-flight fetch. These implement D09; reliable notification delivery, multi-worker coordination and another durable queue remain outside this prototype.
+
 ## D10 — Local synthetic demonstration and demo identities
 
 Accepted by the user. Use three fictional general-adult patients, two caregiver identities, a visible identity selector, in-app routing, and loopback-bound application access. Protect ingestion with an environment-configured simulator key.

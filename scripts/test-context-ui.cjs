@@ -39,6 +39,8 @@ for i in range(24):
     await panel.getByText(/change \+20 bpm/).waitFor();
     await panel.getByText(/24 stored readings/).waitFor();
     assert.equal(await page.locator(".history-chart .recharts-line-curve").count(), 1);
+    const chartBounds = await page.locator(".history-chart .recharts-surface").boundingBox();
+    assert.ok(chartBounds && chartBounds.width > 300 && chartBounds.height >= 200, "Chart must render at a readable size");
     await panel.getByLabel("Chart metric").selectOption("heart_rate_bpm");
     await panel.getByRole("img", { name: "Heart rate history from stored readings" }).waitFor();
     await panel.getByLabel(/Optional note/).fill("Synthetic M4 browser demonstration");

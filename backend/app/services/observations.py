@@ -11,6 +11,7 @@ from app.services.alerts import assess_context
 from app.services.context import OBSERVATION_COLUMNS, OBSERVATION_LIFETIME
 from app.services.errors import MonitoringError
 from app.services.quality import FRESHNESS
+from app.services.realtime import RealtimeHub, notify
 
 
 async def reassess(conn: AsyncConnection, patient_id: UUID, now: datetime,
@@ -34,7 +35,7 @@ async def reassess(conn: AsyncConnection, patient_id: UUID, now: datetime,
 
 
 async def record_observation(engine: AsyncEngine, patient_id: UUID, actor: UUID, body: ObservationInput,
-                              now: datetime | None = None) -> tuple[ObservationReceipt, bool]:
+                              now: datetime | None = None, hub: RealtimeHub | None = None) -> tuple[ObservationReceipt, bool]:
     async with engine.begin() as conn:
         patient = (await conn.execute(text("SELECT * FROM patients WHERE id=:id FOR UPDATE"),
                                       {"id": patient_id})).mappings().one_or_none()
@@ -64,12 +65,18 @@ async def record_observation(engine: AsyncEngine, patient_id: UUID, actor: UUID,
             assessment = (await conn.execute(text("SELECT * FROM assessments WHERE id=:id"),
                                              {"id": assessment_id})).mappings().one()
         receipt = ObservationReceipt(observation=observation, assessment=Assessment.model_validate(assessment))
+    if inserted is not None:
+        notify(hub, "patient.updated", patient_id=patient_id)
+        notify(hub, "alert.updated", patient_id=patient_id)
     return receipt, inserted is None
 
 
-async def expire_observations(engine: AsyncEngine, now: datetime) -> None:
+async def expire_observations(engine: AsyncEngine, now: datetime, hub: RealtimeHub | None = None) -> None:
     async with engine.begin() as conn:
-        patients = await conn.scalars(text("""SELECT id FROM patients WHERE context_expires_at<=:now
-            ORDER BY id FOR UPDATE"""), {"now": now})
+        patients = (await conn.scalars(text("""SELECT id FROM patients WHERE context_expires_at<=:now
+            ORDER BY id FOR UPDATE"""), {"now": now})).all()
         for patient_id in patients:
             await reassess(conn, patient_id, now, "observation_expiry")
+    for patient_id in patients:
+        notify(hub, "patient.updated", patient_id=patient_id)
+        notify(hub, "alert.updated", patient_id=patient_id)

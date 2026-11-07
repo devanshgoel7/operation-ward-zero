@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { acknowledgeAlert, fetchAlert, fetchResolvedAlerts, resolveAlert } from "../api/monitoring";
 import type { components } from "../api/schema";
+import { useSync } from "../api/Realtime";
 
 type Schemas = components["schemas"];
 type Assessment = Schemas["Assessment"];
@@ -41,6 +42,7 @@ function ResolutionForm({ alert, actor }: { alert: Schemas["Alert"]; actor: stri
   const [note, setNote] = useState(saved?.note ?? "");
   const cache = useQueryClient();
   const action = useMutation({
+    networkMode: "always",
     mutationFn: (body: Schemas["Resolve"]) => resolveAlert(alert.id, actor, body),
     onSuccess: async () => {
       sessionStorage.removeItem(key); setSaved(null); setNote("");
@@ -73,13 +75,14 @@ function ResolutionForm({ alert, actor }: { alert: Schemas["Alert"]; actor: stri
 }
 
 function LifecycleHistory({ alertId, caregivers }: { alertId: string; caregivers: Schemas["Caregiver"][] }) {
+  const { interval } = useSync();
   const [expanded, setExpanded] = useState(false);
   const query = useQuery({ queryKey: ["alert", alertId],
     queryFn: ({ signal }) => fetchAlert(alertId, signal), enabled: expanded,
-    refetchInterval: 5000, retry: false });
+    refetchInterval: interval, retry: false, networkMode: "always" });
   return <details onToggle={e => setExpanded(e.currentTarget.open)}>
     <summary>Lifecycle history</summary>
-    {query.isPending && <p>Loading history…</p>}
+    {query.isPending && <p role="status">Loading history…</p>}
     {query.isError && <p role="alert">{query.error.message}</p>}
     <ol>{query.data?.events.map(event => <li key={event.id}>
       <b>{event.event_type}</b> · {new Date(event.occurred_at).toLocaleString()}
@@ -98,9 +101,13 @@ function Episode({ alert, actor, patient, assignee, backup, caregivers }: {
   caregivers: Schemas["Caregiver"][];
 }) {
   const cache = useQueryClient();
+  const [savedAck, setSavedAck] = useState(() => !!sessionStorage.getItem(`wardzero.ack.${alert.id}.${actor}`));
   const action = useMutation({
+    networkMode: "always",
     mutationFn: () => acknowledgeAlert(alert.id, actor),
+    onError: () => setSavedAck(true),
     onSuccess: async () => {
+      setSavedAck(false);
       await cache.invalidateQueries({ queryKey: ["dashboard"] });
       await cache.invalidateQueries({ queryKey: ["alert", alert.id] });
     },
@@ -124,22 +131,24 @@ function Episode({ alert, actor, patient, assignee, backup, caregivers }: {
     {alert.original_assessment && alert.original_assessment.id !== alert.latest_assessment?.id && <details>
       <summary>Opening evidence <span className="severity" data-level={alert.original_assessment.concern}>{alert.original_assessment.concern}</span></summary><Evidence assessment={alert.original_assessment}/>
     </details>}
-    {alert.status === "open" && <button type="button" disabled={actor !== alert.assignee_id || action.isPending}
-      onClick={() => action.mutate()}>{action.isPending ? "Saving acknowledgement…" : "Acknowledge"}</button>}
-    {action.isError && <p role="alert">{action.error.message}</p>}
+    {(alert.status === "open" || savedAck) && <button type="button" disabled={actor !== alert.assignee_id || action.isPending}
+      onClick={() => action.mutate()}>{action.isPending ? "Saving acknowledgement…" : savedAck ? "Retry saved acknowledgement" : "Acknowledge"}</button>}
+    {savedAck && !action.isPending && <p>Acknowledgement result unconfirmed. Retry uses the saved command, including if the server already accepted it.</p>}
+    {action.isError && <p role="alert">{action.error.message} Acknowledgement is unconfirmed; retry retains the saved command.</p>}
     {alert.kind !== "monitoring_gap" && <ResolutionForm key={`${alert.id}.${actor}`} alert={alert} actor={actor}/>}
     <LifecycleHistory alertId={alert.id} caregivers={caregivers}/>
   </article>;
 }
 
-export function RiskAlerts({ dashboard, actor, onActorChange }: {
-  dashboard: Schemas["Dashboard"]; actor: string; onActorChange: (actor: string) => void;
+export function RiskAlerts({ dashboard, actor, onActorChange, outdated }: {
+  dashboard: Schemas["Dashboard"]; actor: string; onActorChange: (actor: string) => void; outdated: boolean;
 }) {
+  const { interval } = useSync();
   const assignedAlerts = dashboard.active_alerts.filter(alert => alert.assignee_id === actor);
   const [showResolved, setShowResolved] = useState(false);
   const resolved = useQuery({ queryKey: ["resolved-alerts", actor],
     queryFn: ({ signal }) => fetchResolvedAlerts(actor, signal), enabled: showResolved,
-    refetchInterval: 5000, retry: false });
+    refetchInterval: interval, retry: false, networkMode: "always" });
   function renderEpisode(alert: Schemas["Alert"]) {
     return <Episode key={`${alert.id}.${actor}`} alert={alert} actor={actor} caregivers={dashboard.caregivers}
       backup={dashboard.patients.some(p => p.patient.id === alert.patient_id && p.patient.backup_caregiver_id === alert.assignee_id)}
@@ -153,12 +162,13 @@ export function RiskAlerts({ dashboard, actor, onActorChange }: {
         {dashboard.caregivers.map(c => <option key={c.id} value={c.id}>{c.display_name}</option>)}
       </select></label>
     </div>
-    {assignedAlerts.length === 0 && <p>No alerts assigned to this caregiver.</p>}
+    {outdated && <p className="cached-warning">Cached inbox — assignments, deadlines and recovery progress may have changed. Actions are confirmed by the server.</p>}
+    {assignedAlerts.length === 0 && <p>{outdated ? "No assigned alerts in the last received snapshot." : "No alerts assigned to this caregiver."}</p>}
     {assignedAlerts.map(renderEpisode)}
     <label><input type="checkbox" checked={showResolved} onChange={e => setShowResolved(e.target.checked)}/> Show recently resolved alerts</label>
     {showResolved && <div>
       <p>Newest 50 resolved episodes for this caregiver. Full saved history remains available through the alerts API.</p>
-      {resolved.isPending && <p>Loading resolved alerts…</p>}
+      {resolved.isPending && <p role="status">Loading resolved alerts…</p>}
       {resolved.isError && <p role="alert">{resolved.error.message}</p>}
       {resolved.data?.items.map(renderEpisode)}
     </div>}
