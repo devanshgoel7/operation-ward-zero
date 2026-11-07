@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { acknowledgeAlert, fetchAlert, fetchResolvedAlerts, resolveAlert } from "../api/monitoring";
 import type { components } from "../api/schema";
 import { useSync } from "../api/Realtime";
+import { StatusBadge } from "../components/DashboardShell";
 
 type Schemas = components["schemas"];
 type Assessment = Schemas["Assessment"];
@@ -65,7 +66,7 @@ function ResolutionForm({ alert, actor }: { alert: Schemas["Alert"]; actor: stri
       {action.isPending ? "Saving resolution…" : saved ? "Retry saved resolution" : "Resolve alert"}
     </button>
     {saved && !action.isPending && <>
-      <button type="button" onClick={() => {
+      <button className="secondary-button" type="button" onClick={() => {
         sessionStorage.removeItem(key); setSaved(null); action.reset();
       }}>Discard resolution draft</button>
       <p>The result is unconfirmed. Retry preserves the command and note; discarding cannot undo a server save.</p>
@@ -113,7 +114,7 @@ function Episode({ alert, actor, patient, assignee, backup, caregivers }: {
     },
   });
   return <article className="episode" data-priority={alert.peak_priority} data-alert-id={alert.id}>
-    <div className="episode-heading"><h3>{patient}</h3><span>{alert.peak_priority} priority</span></div>
+    <div className="episode-heading"><h3>{patient}</h3><StatusBadge tone={alert.peak_priority}>{alert.peak_priority} priority</StatusBadge></div>
     <strong>{{ risk: "Risk concern", monitoring_gap: "Monitoring gap", delayed_review: "Delayed review" }[alert.kind]}</strong>
     {alert.kind === "monitoring_gap" && <p>Opened after 30 seconds without a complete reading. Three consecutive fresh complete readings close this gap.</p>}
     <p>{backup ? "Escalated to backup caregiver" : "Assigned to primary caregiver"} {assignee} · {alert.status === "open" ? "Awaiting acknowledgement" :
@@ -140,8 +141,8 @@ function Episode({ alert, actor, patient, assignee, backup, caregivers }: {
   </article>;
 }
 
-export function RiskAlerts({ dashboard, actor, onActorChange, outdated }: {
-  dashboard: Schemas["Dashboard"]; actor: string; onActorChange: (actor: string) => void; outdated: boolean;
+export function RiskAlerts({ dashboard, actor, outdated }: {
+  dashboard: Schemas["Dashboard"]; actor: string; outdated: boolean;
 }) {
   const { interval } = useSync();
   const assignedAlerts = dashboard.active_alerts.filter(alert => alert.assignee_id === actor);
@@ -155,22 +156,16 @@ export function RiskAlerts({ dashboard, actor, onActorChange, outdated }: {
       patient={dashboard.patients.find(p => p.patient.id === alert.patient_id)!.patient.display_name}
       assignee={dashboard.caregivers.find(c => c.id === alert.assignee_id)!.display_name}/>;
   }
-  return <section className="risk-panel" aria-labelledby="risk-heading">
-    <div className="episode-heading"><div><h2 id="risk-heading">Caregiver inbox</h2>
-      <p>Rules use fictional demonstration settings. The selector provides attribution, not authentication.</p></div>
-      <label>Demo caregiver <select value={actor} onChange={e => onActorChange(e.target.value)}>
-        {dashboard.caregivers.map(c => <option key={c.id} value={c.id}>{c.display_name}</option>)}
-      </select></label>
-    </div>
+  return <>
     {outdated && <p className="cached-warning">Cached inbox — assignments, deadlines and recovery progress may have changed. Actions are confirmed by the server.</p>}
-    {assignedAlerts.length === 0 && <p>{outdated ? "No assigned alerts in the last received snapshot." : "No alerts assigned to this caregiver."}</p>}
+    {assignedAlerts.length === 0 && <p className="empty-state">{outdated ? "No assigned alerts in the last received snapshot." : "No alerts assigned to this caregiver."}</p>}
     {assignedAlerts.map(renderEpisode)}
-    <label><input type="checkbox" checked={showResolved} onChange={e => setShowResolved(e.target.checked)}/> Show recently resolved alerts</label>
+    <label className="resolved-toggle"><input type="checkbox" checked={showResolved} onChange={e => setShowResolved(e.target.checked)}/> Show recently resolved alerts</label>
     {showResolved && <div>
       <p>Newest 50 resolved episodes for this caregiver. Full saved history remains available through the alerts API.</p>
       {resolved.isPending && <p role="status">Loading resolved alerts…</p>}
       {resolved.isError && <p role="alert">{resolved.error.message}</p>}
       {resolved.data?.items.map(renderEpisode)}
     </div>}
-  </section>;
+  </>;
 }
