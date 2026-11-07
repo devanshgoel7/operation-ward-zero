@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 from app.models.alerts import Alert, Assessment
+from app.models.observations import Observation
 
 
 class Reading(BaseModel):
@@ -70,6 +71,7 @@ class PatientSnapshot(BaseModel):
     last_known_concern: Literal["none", "watch", "high"] | None
     last_known_observed_at: AwareDatetime | None
     delivery_delayed: bool
+    active_observations: list[Observation]
 
 
 class Dashboard(BaseModel):

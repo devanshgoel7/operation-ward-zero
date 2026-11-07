@@ -73,3 +73,14 @@ footer h3 { margin: 0; font-size: 1rem; }
 .severity[data-level="watch"] { background: #fff0cb; color: #714400; }
 .severity[data-level="high"] { background: #ffe4df; color: #872b20; }
 .patients .severity { margin-top: .55rem; }
+.context-panel { display: block; margin-top: 1.5rem; }
+.context-panel h3 { margin-top: 1.75rem; }
+.context-panel label { display: block; margin: .8rem 0; }
+.context-panel select, .context-panel textarea, .context-panel button { font: inherit; padding: .5rem; border: 1px solid #728b82; border-radius: .3rem; max-width: 100%; }
+.context-panel textarea { display: block; width: 100%; min-height: 5rem; margin-top: .5rem; }
+.context-panel fieldset { border: 0; padding: 0; }
+.context-panel button { margin-right: .75rem; cursor: pointer; }
+.context-panel button[type="submit"] { background: #205e53; color: white; }
+.context-panel button:disabled { opacity: .6; cursor: default; }
+.trend-summary { padding: .75rem 0; border-bottom: 1px solid #e2ebe7; }
+.history-chart { margin-top: 1rem; min-width: 0; }

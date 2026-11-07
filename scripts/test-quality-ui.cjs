@@ -1,11 +1,11 @@
-// Run on an isolated M3 project with three populated cards and fresh simulator data.
+// Run on an isolated M3/M4 project with three populated cards and fresh simulator data.
 const assert = require("node:assert/strict");
 const { execFileSync } = require("node:child_process");
 const { chromium } = require("playwright");
 
 async function main() {
   const project = process.argv[2];
-  if (!/^wardzero-m3-[a-z0-9-]+$/.test(project ?? "")) throw new Error("Supply an isolated M3 test project.");
+  if (!/^wardzero-m[34]-[a-z0-9-]+$/.test(project ?? "")) throw new Error("Supply an isolated M3/M4 test project.");
   const compose = (...args) => execFileSync("docker", ["compose", "-p", project, ...args], { encoding: "utf8" });
   const base = "http://" + compose("port", "app", "8000").trim();
   const browser = await chromium.launch({ channel: "msedge", headless: true });
@@ -57,7 +57,7 @@ for age, oxygen in [(60, 87), (12, 88)]:
       const saved = await (await fetch(base + "/api/v1/dashboard")).json();
       const review = saved.active_alerts.find(a => a.kind === "delayed_review" && a.patient_id === saved.patients[0].patient.id);
       assert.ok(review);
-      await page.getByRole("combobox").selectOption(review.assignee_id);
+      await page.getByLabel("Demo caregiver").selectOption(review.assignee_id);
       const episode = page.locator(".episode").filter({ hasText: "Delayed review" }).filter({ hasText: saved.patients[0].patient.display_name });
       await episode.getByText(new RegExp(review.latest_assessment.reading_id)).waitFor();
     }

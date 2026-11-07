@@ -6,7 +6,9 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from app.models.alerts import Alert, AlertDetail, AlertPage, Status
-from app.models.monitoring import ReadingInput
+from app.models.monitoring import Reading, ReadingInput
+from app.services.context import CONTEXT_VERSION, active_observations, observation_findings, trend_readings
+from app.services.trends import evaluate_trends
 from app.services.errors import MonitoringError
 from app.services.quality import FRESHNESS, record_quality
 from app.services.risk import RULE_VERSION, threshold_findings
@@ -14,26 +16,63 @@ from app.services.risk import RULE_VERSION, threshold_findings
 
 async def assess_reading(conn: AsyncConnection, reading: ReadingInput, patient_id: UUID,
                          received_at: datetime, newest: bool) -> UUID:
-    findings, complete = threshold_findings(reading)
+    current = newest and received_at - reading.observed_at <= FRESHNESS
+    return await assess_context(conn, patient_id, reading, received_at, current)
+
+
+async def assess_context(conn: AsyncConnection, patient_id: UUID, reading: Reading | None,
+                         now: datetime, current: bool = True, trigger: str = "reading",
+                         observation_id: UUID | None = None, quality: str | None = None) -> UUID:
+    """Caller holds the patient lock; every consequence commits with its trigger."""
+    findings, complete = threshold_findings(reading) if reading else ([], False)
+    summaries = []
+    if current:
+        observations = await active_observations(conn, patient_id, now)
+        if reading:
+            summaries, trends = evaluate_trends(await trend_readings(conn, patient_id, reading.observed_at),
+                                                reading.observed_at)
+            findings.extend(trends)
+        else:
+            summaries, _ = evaluate_trends([], now, current=False)
+        findings.extend(observation_findings(observations, findings))
+        await conn.execute(text("UPDATE patients SET context_expires_at=:expiry WHERE id=:patient"),
+                           {"patient": patient_id, "expiry": min((o.expires_at for o in observations), default=None)})
     concern = "none" if complete else None
     if findings:
         concern = "high" if any(f.priority == "high" for f in findings) else "watch"
-    current = newest and received_at - reading.observed_at <= FRESHNESS
     values = {
-        "patient_id": patient_id, "reading_id": reading.reading_id,
+        "patient_id": patient_id, "reading_id": reading.reading_id if reading else None,
         "scope": "current" if current else "historical", "concern": concern,
-        "quality": "fresh" if complete else "incomplete", "version": RULE_VERSION,
+        "quality": quality or ("fresh" if complete else "incomplete"),
+        "version": CONTEXT_VERSION if current else RULE_VERSION,
         "findings": json.dumps([f.model_dump(mode="json") for f in findings]),
+        "trends": json.dumps([s.model_dump(mode="json") for s in summaries]),
+        "trigger": trigger, "observation": observation_id, "now": now,
     }
     assessment_id = await conn.scalar(text("""
-        INSERT INTO assessments (patient_id, reading_id, scope, concern, data_quality, rule_version, findings)
-        VALUES (:patient_id, :reading_id, :scope, :concern, :quality, :version, CAST(:findings AS jsonb))
+        INSERT INTO assessments (patient_id, reading_id, scope, concern, data_quality, rule_version, findings,
+                                 trend_summary, trigger_kind, observation_id, evaluated_at)
+        VALUES (:patient_id, :reading_id, :scope, :concern, :quality, :version, CAST(:findings AS jsonb),
+                CAST(:trends AS jsonb), :trigger, :observation, :now)
         RETURNING id
     """), values)
     values["assessment_id"] = assessment_id
-    await record_quality(conn, patient_id, reading.observed_at, received_at, complete, current, assessment_id)
+    if trigger == "reading":
+        await record_quality(conn, patient_id, reading.observed_at, now, complete, current, assessment_id)
     if findings:
         await update_concern_episode(conn, patient_id, assessment_id, concern, "risk" if current else "delayed_review")
+    elif current:
+        # Show removed contributions without resolving or changing the episode's peak.
+        await conn.execute(text("""WITH changed AS (
+            UPDATE alerts SET latest_assessment_id=:assessment_id,revision=revision+1
+            WHERE patient_id=:patient_id AND kind='risk' AND status IN ('open','acknowledged')
+              AND (:trigger<>'reading' OR EXISTS (
+                SELECT 1 FROM patients p JOIN assessments a ON a.id=p.current_assessment_id,
+                    jsonb_array_elements(a.findings) finding
+                WHERE p.id=:patient_id AND jsonb_array_length(coalesce(finding->'observations','[]'::jsonb))>0
+              )) RETURNING id
+        ) INSERT INTO alert_events (alert_id,event_type,assessment_id)
+          SELECT id,'updated',:assessment_id FROM changed"""), values)
     if current:
         if concern is not None:
             await conn.execute(text("UPDATE patients SET last_known_assessment_id=:assessment_id WHERE id=:patient_id"),

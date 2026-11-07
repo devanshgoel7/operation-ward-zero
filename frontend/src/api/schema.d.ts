@@ -157,6 +157,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/patients/{patient_id}/observations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Observation */
+        post: operations["post_observation_api_v1_patients__patient_id__observations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -308,11 +325,16 @@ export interface components {
              * Format: uuid
              */
             patient_id: string;
+            /** Reading Id */
+            reading_id: string | null;
+            /** Observation Id */
+            observation_id?: string | null;
             /**
-             * Reading Id
-             * Format: uuid
+             * Trigger Kind
+             * @default reading
+             * @enum {string}
              */
-            reading_id: string;
+            trigger_kind: "reading" | "observation" | "observation_expiry";
             /**
              * Scope
              * @enum {string}
@@ -324,7 +346,7 @@ export interface components {
              * Data Quality
              * @enum {string}
              */
-            data_quality: "fresh" | "incomplete";
+            data_quality: "fresh" | "incomplete" | "stale" | "unavailable";
             /**
              * Evaluated At
              * Format: date-time
@@ -334,6 +356,8 @@ export interface components {
             rule_version: string;
             /** Findings */
             findings: components["schemas"]["Finding"][];
+            /** Trend Summary */
+            trend_summary?: components["schemas"]["TrendSummary"][];
         };
         /** Caregiver */
         Caregiver: {
@@ -396,16 +420,17 @@ export interface components {
             unit: string;
             /** Condition */
             condition: string;
-            /**
-             * Reading Id
-             * Format: uuid
-             */
-            reading_id: string;
+            /** Reading Id */
+            reading_id?: string | null;
             /**
              * Observed At
              * Format: date-time
              */
             observed_at: string;
+            /** Evidence */
+            evidence?: components["schemas"]["ReadingEvidence"][];
+            /** Observations */
+            observations?: components["schemas"]["Observation"][];
         };
         /** HealthError */
         HealthError: {
@@ -429,6 +454,65 @@ export interface components {
              * @constant
              */
             status: "live";
+        };
+        /** Observation */
+        Observation: {
+            /**
+             * Observation Id
+             * Format: uuid
+             */
+            observation_id: string;
+            /**
+             * Tag
+             * @enum {string}
+             */
+            tag: "breathlessness" | "dizziness" | "reduced_intake";
+            /** Present */
+            present: boolean;
+            /** Note */
+            note?: string | null;
+            /**
+             * Patient Id
+             * Format: uuid
+             */
+            patient_id: string;
+            /**
+             * Caregiver Id
+             * Format: uuid
+             */
+            caregiver_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+        };
+        /** ObservationInput */
+        ObservationInput: {
+            /**
+             * Observation Id
+             * Format: uuid
+             */
+            observation_id: string;
+            /**
+             * Tag
+             * @enum {string}
+             */
+            tag: "breathlessness" | "dizziness" | "reduced_intake";
+            /** Present */
+            present: boolean;
+            /** Note */
+            note?: string | null;
+        };
+        /** ObservationReceipt */
+        ObservationReceipt: {
+            observation: components["schemas"]["Observation"];
+            assessment: components["schemas"]["Assessment"];
         };
         /** Patient */
         Patient: {
@@ -471,6 +555,8 @@ export interface components {
             last_known_observed_at: string | null;
             /** Delivery Delayed */
             delivery_delayed: boolean;
+            /** Active Observations */
+            active_observations: components["schemas"]["Observation"][];
         };
         /** Readiness */
         Readiness: {
@@ -494,6 +580,21 @@ export interface components {
             migrations: "current";
             /** Worker Last Success At */
             worker_last_success_at?: string | null;
+        };
+        /** ReadingEvidence */
+        ReadingEvidence: {
+            /**
+             * Reading Id
+             * Format: uuid
+             */
+            reading_id: string;
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            /** Value */
+            value: number;
         };
         /** ReadingInput */
         ReadingInput: {
@@ -591,6 +692,47 @@ export interface components {
              * Format: date-time
              */
             received_at: string;
+        };
+        /** TrendSummary */
+        TrendSummary: {
+            /** Metric */
+            metric: string;
+            /** Unit */
+            unit: string;
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+            /**
+             * Midpoint
+             * Format: date-time
+             */
+            midpoint: string;
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "calculated" | "insufficient_samples" | "gap" | "not_current";
+            /** Earlier Count */
+            earlier_count: number;
+            /** Recent Count */
+            recent_count: number;
+            /** Earlier Median */
+            earlier_median?: number | null;
+            /** Recent Median */
+            recent_median?: number | null;
+            /** Change */
+            change?: number | null;
+            /** Max Gap Seconds */
+            max_gap_seconds?: number | null;
+            /** Evidence */
+            evidence?: components["schemas"]["ReadingEvidence"][];
         };
         /** Unready */
         Unready: {
@@ -1004,6 +1146,88 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Alert"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_observation_api_v1_patients__patient_id__observations_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "x-demo-caregiver-id": string;
+            };
+            path: {
+                patient_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObservationInput"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObservationReceipt"];
+                };
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObservationReceipt"];
                 };
             };
             /** @description Forbidden */

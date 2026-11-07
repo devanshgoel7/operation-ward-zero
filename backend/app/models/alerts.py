@@ -1,10 +1,34 @@
 from typing import Literal
 from uuid import UUID
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+
+from app.models.observations import Observation
 
 Priority = Literal["watch", "high"]
 Status = Literal["open", "acknowledged", "resolved"]
+
+
+class ReadingEvidence(BaseModel):
+    reading_id: UUID
+    observed_at: AwareDatetime
+    value: float
+
+
+class TrendSummary(BaseModel):
+    metric: str
+    unit: str
+    start: AwareDatetime
+    midpoint: AwareDatetime
+    end: AwareDatetime
+    status: Literal["calculated", "insufficient_samples", "gap", "not_current"]
+    earlier_count: int
+    recent_count: int
+    earlier_median: float | None = None
+    recent_median: float | None = None
+    change: float | None = None
+    max_gap_seconds: float | None = None
+    evidence: list[ReadingEvidence] = Field(default_factory=list)
 
 
 class Finding(BaseModel):
@@ -14,20 +38,30 @@ class Finding(BaseModel):
     value: float
     unit: str
     condition: str
-    reading_id: UUID
+    reading_id: UUID | None = None
     observed_at: AwareDatetime
+    evidence: list[ReadingEvidence] = Field(default_factory=list)
+    observations: list[Observation] = Field(default_factory=list)
 
 
 class Assessment(BaseModel):
     id: UUID
     patient_id: UUID
-    reading_id: UUID
+    reading_id: UUID | None
+    observation_id: UUID | None = None
+    trigger_kind: Literal["reading", "observation", "observation_expiry"] = "reading"
     scope: Literal["current", "historical"]
     concern: Literal["none", "watch", "high"] | None
-    data_quality: Literal["fresh", "incomplete"]
+    data_quality: Literal["fresh", "incomplete", "stale", "unavailable"]
     evaluated_at: AwareDatetime
     rule_version: str
     findings: list[Finding]
+    trend_summary: list[TrendSummary] = Field(default_factory=list)
+
+
+class ObservationReceipt(BaseModel):
+    observation: Observation
+    assessment: Assessment
 
 
 class Alert(BaseModel):

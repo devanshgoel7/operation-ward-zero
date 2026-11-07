@@ -74,7 +74,11 @@ Evaluate available measurements immediately, including high breaches in incomple
 
 For trends, compare medians of two adjacent one-minute windows. Require eight valid samples per metric per window and no gap over ten seconds across the two-minute window. A SpO2 decline of at least three percentage points or heart-rate increase of at least 20 bpm produces watch. Otherwise report the calculated change or insufficient continuous history.
 
+M4 implementation detail: anchor the windows to the eligible latest reading's observation time `t`, using `(t-120s,t-60s]` and `(t-60s,t]`. The midpoint belongs only to the earlier window. Check continuity per metric between valid samples and from the outer window edges to the first/last valid samples. Exactly eight samples and exactly ten-second gaps are eligible. Each stored summary contains bounds, counts, maximum gap, medians/change when supported, and sample IDs/timestamps/values. Current assessments use `demo-context-v1`; historical threshold-only assessments retain `demo-thresholds-v1`. Existing saved assessments remain unchanged.
+
 Structured observations support breathlessness, dizziness, and reduced_intake. Store present true/false, actor, server time, and optional note up to 500 characters. The latest observation per tag applies for ten minutes. False clears that tag. Any active concern floors priority at watch. Breathlessness combined with a current SpO2 threshold breach or falling-SpO2 trend raises high. Clearing an observation cannot suppress another firing rule. Free text is displayed without interpretation. Reevaluate on observation expiry.
+
+M4 selects the latest row per tag before testing `present` and `expires_at > now`; older positives never reactivate. Server timestamps are assigned after acquiring the patient lock, with an identity ordinal breaking timestamp ties. Observation creation and expiry create separate immutable assessments, optionally referencing the eligible latest reading. With stale or absent readings, observations can still produce Watch, but old vitals cannot support a current combination. The patient stores the next active observation expiry. Ingestion, the five-second loop, and startup remove expired contributions; processing the deadline repeatedly produces no duplicate expiry assessment. Latest alert evidence reflects removal, while original evidence, peak priority, and acknowledgement history remain saved. Risk resolution stays in M5.
 
 | Timing | Approved default |
 |---|---|
@@ -143,6 +147,8 @@ erDiagram
 
 Enforce unique reading ID and (device_id, sequence), unique device per patient, unique non-null command_id, and a partial unique (patient_id, kind) index for open/acknowledged alerts. Derive reading patient_id from the device server-side.
 
+M4 migration `0007_context` adds `observations`, `patients.context_expires_at`, and assessment `observation_id`, `trigger_kind`, and `trend_summary`. Reading-triggered assessments alone have a unique `reading_id`; observation-triggered assessments have a unique `observation_id`. Reading receipts select the original reading-triggered assessment even after subsequent contextual reassessments. Observation-triggered assessments may have no reading and have stale/unavailable quality independently of concern. Downgrade refuses to discard saved M4 context evidence.
+
 Index reading history by (patient_id, observed_at DESC, id), observations by (patient_id, tag, created_at DESC), assessments by (patient_id, evaluated_at DESC), inboxes by (assignee_id, status, opened_at DESC), due open alerts by escalation_due_at, and events by (alert_id, occurred_at).
 
 Approximately 51,840 frames arrive daily at the planned rate. Retain all hackathon records without automatic cleanup. Use ordinary tables. Startup preserves existing data. A future real-data retention policy requires a separate decision.
@@ -181,6 +187,8 @@ The simulator CLI will support run, scenario <patient> <stable|deterioration|rec
 ## Dashboard and operational evidence
 
 Use one page with three patient cards, selected vitals and timestamps, quality status, a selectable-metric chart, explanations, observations, caregiver inbox filtering, lifecycle controls/history, and synchronization status. Pair colors with text/icons. Confirm mutations only after server success. Retain failed drafts visibly.
+
+M4 adds a selected-patient chart for all five metrics using the last 30 minutes of observed-time history (newest 2,000 rows, with a visible limit notice if truncated). Nulls and gaps over ten seconds break the chart line. The observation form uses the same demo caregiver selection as the inbox. Unconfirmed submission payloads and UUIDs survive reload in session storage, keyed by patient and actor; retry resends exactly that payload. Explicitly discarding a draft does not undo any server-side save.
 
 For recovery verification, stop generation and drain the queue. Compare identifier sets so locally committed IDs equal the disjoint union of server-stored, pending, and quarantined IDs. Valid fully drained fixtures must all exist on the server.
 

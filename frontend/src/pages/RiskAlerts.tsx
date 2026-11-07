@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { acknowledgeAlert } from "../api/monitoring";
 import type { components } from "../api/schema";
@@ -11,14 +10,24 @@ const metricNames: Record<string, string> = {
   diastolic_mmhg: "Diastolic pressure", temperature_c: "Temperature",
 };
 
-function Evidence({ assessment }: { assessment: Assessment }) {
+export function Evidence({ assessment }: { assessment: Assessment }) {
   return <>
     <ul className="findings">{assessment.findings.map(f => <li key={f.rule_id}>
-      <b>{metricNames[f.metric]}</b> {f.value} {f.unit} · {f.priority} when {f.condition} {f.unit}
+      <b>{metricNames[f.metric] ?? f.metric.replaceAll("_", " ")}</b> {f.value} {f.unit} · {f.priority} when {f.condition}
       <br/><small>Observed {new Date(f.observed_at).toLocaleString()} · Rule {f.rule_id}</small>
+      {(f.observations ?? []).map(o => <p key={o.observation_id} className="source">
+        Observation {o.observation_id} · {o.tag.replaceAll("_", " ")} · actor {o.caregiver_id}
+        {o.note && <> · Note: {o.note}</>}
+      </p>)}
+      {(f.evidence ?? []).length > 0 && <details><summary>Stored reading evidence ({f.evidence!.length})</summary>
+        <ul>{f.evidence!.map(e => <li className="source" key={e.reading_id}>
+          {e.value} · {new Date(e.observed_at).toLocaleString()} · {e.reading_id}
+        </li>)}</ul>
+      </details>}
     </li>)}</ul>
-    <small className="source">{assessment.rule_version} · {assessment.data_quality === "incomplete"
-      ? "Incomplete reading" : "Complete reading"} · {assessment.scope === "historical" ? "Historical reading" : "Reading"} {assessment.reading_id}</small>
+    <small className="source">{assessment.rule_version} · {assessment.data_quality} data ·
+      {assessment.scope === "historical" ? " Historical reading" : " Reading"} {assessment.reading_id ?? "unavailable"}
+      {assessment.observation_id && <> · Trigger observation {assessment.observation_id}</>}</small>
   </>;
 }
 
@@ -32,7 +41,7 @@ function Episode({ alert, actor, patient, assignee, backup }: {
   });
   return <article className="episode" data-priority={alert.peak_priority}>
     <div className="episode-heading"><h3>{patient}</h3><span>{alert.peak_priority} priority</span></div>
-    <strong>{{ risk: "Threshold concern", monitoring_gap: "Monitoring gap", delayed_review: "Delayed review" }[alert.kind]}</strong>
+    <strong>{{ risk: "Risk concern", monitoring_gap: "Monitoring gap", delayed_review: "Delayed review" }[alert.kind]}</strong>
     {alert.kind === "monitoring_gap" && <p>Opened after 30 seconds without a complete reading. Three consecutive fresh complete readings close this gap.</p>}
     <p>{backup ? "Escalated to backup caregiver" : "Assigned to primary caregiver"} {assignee} · {alert.status === "open" ? "Awaiting acknowledgement" :
       `Acknowledged by ${assignee} at ${new Date(alert.acknowledged_at!).toLocaleString()}`}</p>
@@ -47,14 +56,14 @@ function Episode({ alert, actor, patient, assignee, backup }: {
   </article>;
 }
 
-export function RiskAlerts({ dashboard }: { dashboard: Schemas["Dashboard"] }) {
-  const [selection, setSelection] = useState("");
-  const actor = selection || dashboard.caregivers[0]?.id || "";
+export function RiskAlerts({ dashboard, actor, onActorChange }: {
+  dashboard: Schemas["Dashboard"]; actor: string; onActorChange: (actor: string) => void;
+}) {
   const assignedAlerts = dashboard.active_alerts.filter(alert => alert.assignee_id === actor);
   return <section className="risk-panel" aria-labelledby="risk-heading">
     <div className="episode-heading"><div><h2 id="risk-heading">Caregiver inbox</h2>
-      <p>Thresholds use fictional demonstration settings.</p></div>
-      <label>Demo caregiver <select value={actor} onChange={e => setSelection(e.target.value)}>
+      <p>Rules use fictional demonstration settings. The selector provides attribution, not authentication.</p></div>
+      <label>Demo caregiver <select value={actor} onChange={e => onActorChange(e.target.value)}>
         {dashboard.caregivers.map(c => <option key={c.id} value={c.id}>{c.display_name}</option>)}
       </select></label>
     </div>

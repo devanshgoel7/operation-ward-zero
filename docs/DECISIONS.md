@@ -48,6 +48,8 @@ Old abnormal readings produce aggregated delayed-review evidence. Missing/stale 
 
 M3 implementation note, 2026-11-07. Preserve each reading assessment as evidence of what was observed at ingestion. Derive current data quality at query time from observation timestamps, and persist the gap episode and recovery count under the patient lock. This lets a silent monitor become visibly stale without inventing measurements. On upgrade, group existing M2 historical findings into delayed-review episodes while preserving their assessment IDs.
 
+M4 implementation note, 2026-11-07. Trend windows are `(t-120s,t-60s]` and `(t-60s,t]`, anchored to the eligible current reading. Continuity includes outer edges and is checked separately for each metric. Persist complete sample evidence and unsupported-history reasons. Latest-per-tag observations expire at exactly ten minutes; selection precedes expiry filtering so older positives cannot return. Observation capture/expiry creates a new assessment under the patient lock rather than modifying original reading evidence. A partial unique reading-assessment index preserves receipt replay while allowing contextual reassessment of the same reading. Store the next observation expiry on the patient so startup and the existing worker recover due work. Clearing and expiry update current/latest evidence without resolving a risk episode or reducing its historical peak. These choices implement the approved context rules without adding prediction or another worker.
+
 ## D08 — Persist alert lifecycle and deadlines
 
 Accepted. Save open/acknowledged/resolved state, assignee, peak priority, deadline, and audit history in PostgreSQL. Keep one active alert per patient and kind. Use a five-second periodic loop and startup recovery.

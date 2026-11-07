@@ -67,7 +67,7 @@ def test_explained_episode_and_acknowledgement(client: TestClient) -> None:
     assert assessment["id"] == receipt.json()["assessment_id"]
     assert assessment["reading_id"] == second["reading_id"]
     assert (assessment["concern"], assessment["data_quality"], assessment["scope"]) == ("high", "incomplete", "current")
-    assert assessment["rule_version"] == "demo-thresholds-v1"
+    assert assessment["rule_version"] == "demo-context-v1"
     hr, oxygen = assessment["findings"]
     assert (hr["priority"], hr["value"], hr["unit"], hr["condition"]) == ("watch", 115, "bpm", "> 110")
     assert (oxygen["rule_id"], oxygen["value"], oxygen["unit"], oxygen["condition"]) == ("spo2_pct.low.high", 88, "%", "< 90")

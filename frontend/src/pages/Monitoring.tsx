@@ -1,7 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { fetchDashboard, type PatientSnapshot } from "../api/monitoring";
 import { EnvironmentStatus } from "./EnvironmentStatus";
 import { RiskAlerts } from "./RiskAlerts";
+import { PatientContext } from "./PatientContext";
 
 function timestamp(value: string) {
   return <time dateTime={value}>{new Date(value).toLocaleString()}</time>;
@@ -18,7 +20,7 @@ function PatientCard({ snapshot, offline }: { snapshot: PatientSnapshot; offline
       {snapshot.delivery_delayed && <p>Delayed delivery · over 10 seconds</p>}
       {showLastKnown && snapshot.last_known_concern && snapshot.last_known_observed_at &&
         <p>Last known concern · {snapshot.last_known_concern} at {timestamp(snapshot.last_known_observed_at)}</p>}
-      {reading && assessment?.reading_id === reading.reading_id &&
+      {assessment &&
         (assessment.concern === "watch" || assessment.concern === "high") &&
         <span className="severity" data-level={assessment.concern}>{assessment.concern} concern</span>}
       {reading ? <>
@@ -40,9 +42,11 @@ function PatientCard({ snapshot, offline }: { snapshot: PatientSnapshot; offline
 }
 
 export function Monitoring() {
+  const [selection, setSelection] = useState("");
   const query = useQuery({
     queryKey: ["dashboard"], queryFn: fetchDashboard, refetchInterval: 5000, retry: false, networkMode: "always",
   });
+  const actor = selection || query.data?.caregivers[0]?.id || "";
   return <>
     <header>
       <svg className="mark" viewBox="0 0 32 32" aria-hidden="true">
@@ -57,7 +61,10 @@ export function Monitoring() {
       {query.isError && <p role="alert">Refresh failed. Last received readings are shown when available.</p>}
       <div className="patients">{query.data?.patients.map(snapshot =>
         <PatientCard key={snapshot.patient.id} snapshot={snapshot} offline={query.isError} />)}</div>
-      {query.data && <RiskAlerts dashboard={query.data}/>}
+      {query.data && <>
+        <RiskAlerts dashboard={query.data} actor={actor} onActorChange={setSelection}/>
+        <PatientContext dashboard={query.data} actor={actor}/>
+      </>}
       <EnvironmentStatus />
     </main>
   </>;

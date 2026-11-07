@@ -9,6 +9,7 @@ from app.models.monitoring import PatientSnapshot, ReadingInput, ReadingPage, Re
 from app.services.alerts import assess_reading
 from app.services.quality import FRESHNESS
 from app.services.errors import MonitoringError
+from app.services.context import active_observations
 
 
 async def ingest(engine: AsyncEngine, reading: ReadingInput) -> Receipt:
@@ -36,7 +37,7 @@ async def ingest(engine: AsyncEngine, reading: ReadingInput) -> Receipt:
             if received is None:
                 raise MonitoringError(409, "identity_conflict", "Reading ID or sequence already used.")
             assessment_id = await conn.scalar(
-                text("SELECT id FROM assessments WHERE reading_id = :reading_id"), values)
+                text("SELECT id FROM assessments WHERE reading_id = :reading_id AND trigger_kind='reading'"), values)
             disposition = "duplicate"
         else:
             newest = await conn.scalar(text("""
@@ -53,17 +54,18 @@ async def ingest(engine: AsyncEngine, reading: ReadingInput) -> Receipt:
 
 
 async def snapshots(conn: AsyncConnection, patient_id: UUID | None = None) -> list[PatientSnapshot]:
+    now = datetime.now(UTC)
     query = """
         SELECT to_jsonb(p) || jsonb_build_object('device_id', d.id) AS patient,
                CASE WHEN r.id IS NOT NULL THEN (to_jsonb(r) - 'payload_hash' - 'id')
                     || jsonb_build_object('reading_id', r.id) END AS latest_reading,
-               CASE WHEN ar.observed_at >= :cutoff THEN to_jsonb(a) END AS current_assessment,
+               CASE WHEN ar.observed_at >= :cutoff OR a.reading_id IS NULL THEN to_jsonb(a) END AS current_assessment,
                CASE WHEN r.id IS NULL THEN 'unavailable'
                     WHEN r.observed_at < :cutoff OR greatest(p.last_complete_at,p.monitoring_started_at) < :cutoff
                         THEN 'stale'
                     WHEN num_nonnulls(r.heart_rate_bpm,r.spo2_pct,r.systolic_mmhg,r.diastolic_mmhg,r.temperature_c)<5
                         THEN 'incomplete' ELSE 'fresh' END AS data_quality,
-               known.concern AS last_known_concern, kr.observed_at AS last_known_observed_at,
+               known.concern AS last_known_concern, coalesce(kr.observed_at,known.evaluated_at) AS last_known_observed_at,
                coalesce(r.received_at-r.observed_at > interval '10 seconds',false) AS delivery_delayed
         FROM patients p JOIN devices d ON d.patient_id = p.id
         LEFT JOIN readings r ON r.id = p.latest_reading_id
@@ -74,8 +76,12 @@ async def snapshots(conn: AsyncConnection, patient_id: UUID | None = None) -> li
     """
     if patient_id is not None:
         query += " WHERE p.id = :patient_id"
-    rows = await conn.execute(text(query + " ORDER BY p.id"), {"patient_id": patient_id, "cutoff": datetime.now(UTC) - FRESHNESS})
-    return [PatientSnapshot.model_validate(row) for row in rows.mappings()]
+    rows = await conn.execute(text(query + " ORDER BY p.id"), {"patient_id": patient_id, "cutoff": now - FRESHNESS})
+    result = []
+    for row in rows.mappings():
+        result.append(PatientSnapshot.model_validate(dict(row) | {
+            "active_observations": await active_observations(conn, UUID(row["patient"]["id"]), now)}))
+    return result
 
 
 async def history(conn: AsyncConnection, patient_id: UUID, start: datetime, end: datetime,

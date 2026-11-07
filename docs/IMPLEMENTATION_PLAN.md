@@ -4,11 +4,11 @@ Updated 2026-11-07. Read [AGENTS.md](../AGENTS.md) before work. The approved beh
 
 ## Current state
 
-M0 through M3 are complete. The simulator retains frames across transport and service outages. PostgreSQL stores assessment evidence, monitoring gaps and delayed-review episodes. The polling dashboard distinguishes current data quality from concern. The [M3 walkthrough](../README.md#verify-m3) reproduces the failure matrix in an isolated project. The user requested an uncommitted M3 handoff.
+M0 through M4 are complete. The simulator retains frames across transport and service outages. PostgreSQL stores threshold/trend/observation evidence, monitoring gaps and delayed-review episodes. The polling dashboard distinguishes current data quality from concern and provides history charts and structured observations. The [M4 walkthrough](../README.md#verify-m4) describes the implemented context rules and browser verification. The user requested an uncommitted M4 handoff.
 
 The workspace was empty when documentation creation began. During planning on 2026-11-05, Python and Node were absent from the inspected shell PATH. Docker CLI was present, its daemon was unreachable, and its user configuration could not be read in that session. Recheck these observations during M0. They do not establish the machine's permanent configuration.
 
-The M0 through M3 sections record executed checks. M4 awaits authorization. The earlier caregiver handoff remains recorded under M5.
+The M0 through M4 sections record executed checks. M4 is complete; the user subsequently authorized a local commit without pushing. The earlier caregiver handoff remains recorded under M5; no further M5 or M6 work was performed.
 
 ## Budget and priorities
 
@@ -22,7 +22,7 @@ P1, after P0 passes, includes a compact reliability export, connection-gap visua
 | M1 Durable monitoring vertical slice | 6 | 9 | Complete |
 | M2 Explained alerts and acknowledgement | 6 | 15 | Complete |
 | M3 Failure recovery and data quality | 7 | 22 | Complete |
-| M4 Historical trends and observations | 5 | 27 | Pending |
+| M4 Historical trends and observations | 5 | 27 | Complete — local commit authorized; no push |
 | M5 Escalation and lifecycle completion | 4 | 31 | Partial — requested caregiver handoff implemented; full lifecycle gate pending |
 | M6 Real-time dashboard polish | 5 | 36 | Pending |
 | M7 Full verification and submission | 4 | 40 | Pending |
@@ -139,13 +139,40 @@ The first matrix run exposed an ephemeral test-port change after the app restart
 
 Depends on M3. Implement median comparisons, sample/gap eligibility, observation capture/expiry, combination rules, and history charts. Likely areas are trends/observations/risk and frontend history/forms.
 
-- [ ] Both deterministic trend scenarios produce expected findings.
-- [ ] Insufficient samples and gaps suppress unsupported trend conclusions.
-- [ ] Structured observations affect concern according to approved rules.
-- [ ] Clearing and expiry remove observation contributions.
-- [ ] Explanations reference stored evidence.
+- [x] Both deterministic trend scenarios produce expected findings.
+- [x] Insufficient samples and gaps suppress unsupported trend conclusions.
+- [x] Structured observations affect concern according to approved rules.
+- [x] Clearing and expiry remove observation contributions.
+- [x] Explanations reference stored evidence.
 
 Test window boundaries, sample counts, gaps, observation replay, expiry, clearing, and combined conditions using a controllable clock. Demonstrate falling SpO2 plus breathlessness. Done requires the common gate and traceable contextual findings.
+
+**Implementation plan, 2026-11-07 (before code changes).** Inspection found SQLAlchemy Core transactions rather than ORM entities, one unique assessment per reading, threshold-only finding contracts, a patient-first lock shared by ingestion and lifecycle operations, and a five-second startup/periodic freshness and escalation loop. History is already paginated by observed time. Recharts is pinned but unused. Observations, trend summaries, and history charts are absent. Existing escalation is retained; M5 resolution and M6 WebSockets are outside this work.
+
+1. Add migration `0007_context`: constrained observation storage, actor attribution and server timestamps, observation-triggered/expiry assessments, JSONB trend summaries, and a persisted next-expiry deadline. Preserve existing reading receipts with a unique index restricted to reading-triggered assessments.
+2. Implement pure median comparisons anchored to the eligible current reading: `(t-120s,t-60s]` and `(t-60s,t]`. Require eight valid metric samples in each window and gaps at most ten seconds, including the outer edges. Store window bounds, medians, signed change, eligibility reason, and every contributing reading ID/time/value. Historical ingestion stays threshold-only; future current evaluations can use recovered history.
+3. Add assigned-primary/backup observation POST with strict tag/boolean/note validation, server creation/expiry, identical replay and conflicting UUID rejection. Latest-per-tag selection precedes expiry filtering so earlier positives never resurrect. Evaluate threshold, trends and active observations atomically under the patient lock; stale readings cannot support current combination rules.
+4. Apply Watch floors and the breathlessness/SpO2 High combination. Clearing/expiry remove only observation contributions. Keep original evidence and peak alert priority; do not implement risk resolution. Process due expiry in the existing loop before readiness, with persisted scheduling to avoid repeated effects.
+5. Extend generated OpenAPI types, share the existing demo caregiver selector, add patient/metric history charts with missing-data gaps, trend explanations, active observation attribution/expiry, and a form retaining uncertain submissions and UUIDs for retry. Keep polling and display notes without interpretation.
+6. Verify deterministic rule boundaries, sample/gap suppression, evidence references, all tags/combinations, clear/expiry, authorization/validation, replay/conflict/concurrency, rollback, upgrade compatibility and startup expiry using real PostgreSQL and injected evaluation times. Run the full backend and simulator regressions, strict TypeScript/production build, and an isolated browser scenario showing falling SpO2 plus breathlessness, clearing, chart data, and failed-form retry.
+7. Record exact commands and outcomes here and document runnable M4 usage in README. Mark M4 complete only after all five criteria pass. Leave all changes uncommitted as requested.
+
+**Verification on 2026-11-07.** The plan above was recorded before code changes. M4 extends the existing transaction, patient lock, history API, polling dashboard and periodic worker. No new dependency or service was added. The primary local stack was upgraded with existing volumes preserved.
+
+| Check run | Observed result |
+|---|---|
+| `docker compose -p wardzero-m4-check up -d --build --wait app` with `APP_PORT=18014` | Isolated PostgreSQL/app startup passed. Strict TypeScript and Vite production build passed. Recharts is the already-pinned chart dependency. Vite reports its nonblocking dependency-directive and bundle-size warnings (approximately 647 kB uncompressed). |
+| `docker compose -p wardzero-m4-check exec -T app python -m pytest -q` | **69 passed**, including all 47 prior checks, with one existing TestClient deprecation warning. New checks cover both exact trend thresholds, median outlier resistance, subthreshold changes, midpoint/outer bounds, exactly eight samples/ten-second gaps, missing samples/nulls/edge gaps, all observation tags, combination on an incomplete current reading, stale/historical exclusion, clearing, exact expiry, no resurrection, stored evidence, and stable reading receipts after reassessment. |
+| PostgreSQL persistence checks in that same suite | Four concurrent observation copies produced one 201 and three 200 responses with one observation/assessment/event. Conflicting payloads/actors/patients returned 409; assignment and strict validation were enforced. A final audit constraint failure rolled back observation, assessment, patient state, and alert. Concurrent reading/observation writes retained one consistent risk episode. Startup-check expiry ran once. Ingestion processing an expired observation removed it from latest alert evidence. Populated M3 upgrade and existing M1/M2 migration regressions passed. |
+| `docker compose -p wardzero-m4-check run --rm --no-deps --build simulator python -m unittest discover -s simulator` | **6 passed**, preserving durable buffering, retry/quarantine behavior, scenario rotation, and identifier verification. |
+| OpenAPI generation with `openapi-typescript@7.10.1` from the isolated server | Checked-in strict frontend declarations regenerated successfully. No dependency manifest/lock changes. |
+| `node scripts/test-context-ui.cjs` with bundled Playwright and headless Edge | Passed twice; final project `wardzero-m4-ui-1794038665486`. The browser displayed both supported median changes and the 24-reading chart; saved breathlessness changed Watch to High; clearing returned Watch. Verified backup attribution and literal note rendering. Dropping an actual committed observation response, reloading, and retrying retained exactly one database row. A real app stop/restart processed overdue expiry once. No browser page errors. Screenshot `m4-browser-evidence.png` inspected; test projects stopped with evidence volumes retained. |
+| `python scripts/test-recovery.py` | Full real failure matrix passed on M4 in `wardzero-m3-7d18142819`. Network disconnection accumulated **24 pending frames** and three monitoring gaps. Simulator restart retained pending IDs/sequences during app outage; restart escalated an overdue review once. PostgreSQL outage returned no false success. Lost receipt `3172ef75-c03b-4e64-bc93-096052f23558` left exactly one reading/assessment/event. **55 generated = 55 stored**, then **58 generated = 56 stored + 1 pending + 1 quarantined**, with empty discrepancy/overlap sets. Services stopped and volumes retained. |
+| `node scripts/test-quality-ui.cjs wardzero-m4-check` | M3 browser regression passed: refresh failure, stale/last-known values, saved monitoring gap on reconnect, incomplete High, delayed delivery, and historical evidence across reload. Updated its caregiver selector to use the accessible label now that M4 adds other selects. Simulator restored afterward. |
+| `docker compose up -d --build --wait app`, `docker compose exec -T app alembic current`, and `docker compose config -q` | Regular local app healthy at port 8010, applied `0007_context (head)`, valid configuration. Existing PostgreSQL and simulator volumes preserved. |
+| Final local HTTP and documentation checks | Regular dashboard returned readiness `ready`, three fresh patients, and the M4 observation contract. All 19 local Markdown links/anchors across the five project documents passed. `git diff --check` passed. |
+
+Review corrected an ingestion/expiry race that could leave expired observation evidence as the latest alert evidence; its regression passes. The first backend run's old rule-version expectation was updated for `demo-context-v1`. Temporary QA services are stopped with their evidence volumes retained; the regular dashboard remains running. No open M4 blockers. The commit step is explicitly waived by the user's no-commit instruction. M5 resolution and M6 realtime remain outside this handoff.
 
 ### M5 — Escalation and lifecycle completion
 
@@ -253,3 +280,7 @@ Future entries should include milestone status, actual commands/results, outstan
 **2026-11-07 — M3 handoff.** All seven failure-recovery and data-quality criteria passed. See the M3 verification table for commands, reconciliation counts and recovery evidence. Changes are uncommitted at the user's request. The next planned milestone is M4, pending separate authorization.
 
 **2026-11-07 — M3 commit authorization.** The user subsequently authorized committing the completed M3 implementation, tests and documentation. Verification evidence remains recorded above. M4 awaits separate authorization.
+
+**2026-11-07 — M4 handoff.** Inspected the approved documents and actual code, recorded the detailed implementation plan, then completed all five M4 criteria. Evidence is in the M4 table above. The regular dashboard runs migration `0007_context` with persistent data preserved. All work remains uncommitted as requested. No open M4 failures or blockers. The next planned milestone is M5 lifecycle completion, which requires separate authorization; no next-milestone work was started.
+
+**2026-11-07 — M4 commit authorization.** The user subsequently authorized committing the completed M4 implementation, tests, and documentation locally, with no push. The verification evidence above remains applicable; the pre-commit diff check passed. No additional milestone work was authorized.

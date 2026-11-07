@@ -13,6 +13,9 @@ backend/
     api/health.py              HTTP routes and status codes
     api/monitoring.py          Sensor ingestion, dashboard, patient and history routes
     services/monitoring.py     Transactional ingestion and patient queries
+    services/trends.py         Median windows and continuity eligibility
+    services/context.py        Active observations and combination findings
+    services/observations.py   Transactional capture, replay and expiry
     models/monitoring.py       Reading validation and monitoring contracts
     services/health.py         Database and migration readiness checks
     models/health.py           Typed health response contracts
@@ -24,6 +27,7 @@ frontend/src/
   api/health.ts                Readiness request
   api/monitoring.ts            Dashboard request with generated OpenAPI types
   pages/Monitoring.tsx         Polling patient cards
+  pages/PatientContext.tsx     History chart, trend evidence and observation form
   pages/EnvironmentStatus.tsx  Environment screen
   styles/global.css            Shell styles
 scripts/                       Operational verification
@@ -65,6 +69,33 @@ The [running OpenAPI contract](http://127.0.0.1:8010/docs) lists fields, units a
 | `GET /api/v1/patients/{patient_id}/readings` | Returns newest-first history. Use timezone-aware `from` and `to`, a `limit` (default 500, maximum 2,000) and the returned `next_cursor`. The default interval is the last 30 minutes. |
 
 The simulator keeps every frame in its named volume, including its original payload, delivery status and attempt metadata. Sampling continues while the oldest pending upload retries. Network errors, unconfirmed receipts, HTTP 408, 429 and server errors back off with jitter up to 15 seconds. A longer Retry-After takes precedence. Other 4xx responses quarantine that frame and allow the next upload to proceed.
+
+## Verify M4
+
+M4 adds observed-time history charts, two descriptive trends, and caregiver observations. Start or upgrade with the normal `docker compose up --build --wait --wait-timeout 120` command; existing volumes and receipts are preserved. The migration head is `0007_context`.
+
+On the [dashboard](http://127.0.0.1:8010/), select **Demo caregiver**, then use **History and observations** to select a patient and chart metric. The chart shows the last 30 minutes, breaks lines at missing measurements or gaps over ten seconds, and reports its 2,000-row display limit when relevant. Trend summaries show counts, window times, medians/change, or why continuous history is insufficient. Findings expand to the exact stored reading evidence.
+
+Use **Record observation** for breathlessness, dizziness, or reduced intake. **Present** applies for ten minutes; **Absent / clear this tag** immediately removes that tag. Only the patient's seeded primary or backup caregiver may submit. Notes (maximum 500 characters) are stored and displayed literally. An active tag floors concern at Watch; breathlessness plus a current SpO₂ threshold breach or supported falling trend raises High. Clearing or expiry preserves other firing rules and the alert's peak priority. Risk resolution remains planned for M5.
+
+Failed or unconfirmed saves retain the exact payload and UUID through reload. Select the same patient and caregiver, then **Retry saved observation**. **Discard draft** only removes the browser draft; it does not undo a possible server save.
+
+| Request | M4 behavior |
+|---|---|
+| `POST /api/v1/patients/{id}/observations` | Requires `X-Demo-Caregiver-Id`. Body: `observation_id` UUID, `tag`, strict boolean `present`, optional `note`. Returns observation and assessment after commit: 201 new, 200 identical replay, 409 conflicting UUID, 403 unassigned actor, 422 invalid fields, 503 persistence failure. Creation and expiry times are server-assigned. |
+| `GET /api/v1/patients/{id}` and `GET /api/v1/dashboard` | Include active observations and contextual assessment findings/trend summaries. Reading-triggered assessment IDs remain stable on ingestion replay. |
+
+The trend windows are `(t−120s,t−60s]` and `(t−60s,t]`, anchored to the eligible latest reading. Each metric needs eight non-null samples per window and gaps no larger than ten seconds, including the outer edges. Median SpO₂ change ≤−3 percentage points or heart-rate change ≥20 bpm produces Watch. Historical ingestion remains threshold-only; recovered history can contribute to the next eligible current window. All parameters are synthetic demonstration settings, not clinical validation.
+
+```powershell
+docker compose exec -T app python -m pytest -q
+docker compose exec -T simulator python -m unittest discover -s simulator
+docker compose exec -T app alembic current
+# Requires Node, Playwright, and Microsoft Edge, as with the M3 browser check.
+node scripts/test-context-ui.cjs
+```
+
+The M4 browser script builds a uniquely named isolated Compose project with a random loopback port, submits 24 stored readings, verifies both trends and the chart, records breathlessness to produce High, clears it, and drops a real committed observation response before retrying after reload. It also stops the real app, makes an observation overdue in that isolated fixture, and verifies startup expiry. It saves `m4-browser-evidence.png` (ignored by Git), stops its services, and retains its PostgreSQL evidence volume. It never changes the regular demo dataset. The backend suite uses disposable real PostgreSQL databases and controlled evaluation times for exact expiry/window boundaries, replay/concurrency, rollback, and migration compatibility.
 
 ## Verify M3
 
