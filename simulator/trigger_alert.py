@@ -32,6 +32,7 @@ def main() -> None:
                 patient = tuple(devices)[index]
             queued = queue_alert(connection, devices[patient])
             if queued:
+                connection.execute("DELETE FROM scenarios WHERE device_id = ?", (str(devices[patient]),))
                 index = tuple(devices).index(patient)
                 connection.execute("UPDATE demo_rotation SET next_index = ?", ((index + 1) % len(devices),))
     if queued:

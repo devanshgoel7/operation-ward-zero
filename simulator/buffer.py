@@ -29,6 +29,10 @@ def initialize(connection: sqlite3.Connection) -> None:
         );
         CREATE TABLE IF NOT EXISTS demo_rotation (singleton INTEGER PRIMARY KEY CHECK(singleton=1), next_index INTEGER NOT NULL);
         INSERT OR IGNORE INTO demo_rotation VALUES (1, 0);
+        CREATE TABLE IF NOT EXISTS scenarios (
+            device_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL CHECK(name IN ('stable','deterioration','recovery','missing'))
+        );
     """)
 
 
@@ -55,6 +59,13 @@ def generate(connection: sqlite3.Connection, device_id: UUID, observed: datetime
                 frame["heart_rate_bpm"] = 115
             if offset >= 5:
                 connection.execute("DELETE FROM alert_demo WHERE device_id = ?", (str(device_id),))
+        scenario = connection.execute("SELECT name FROM scenarios WHERE device_id = ?",
+                                      (str(device_id),)).fetchone()
+        if scenario is not None:
+            frame["heart_rate_bpm"] = 90 if scenario["name"] == "deterioration" else 70
+            frame["spo2_pct"] = 96 if scenario["name"] == "deterioration" else 99
+            if scenario["name"] == "missing":
+                frame["spo2_pct"] = None
         connection.execute("""
             INSERT INTO frames (reading_id, device_id, sequence, payload) VALUES (?, ?, ?, ?)
         """, (reading_id, str(device_id), sequence, json.dumps(frame)))

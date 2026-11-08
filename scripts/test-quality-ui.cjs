@@ -1,11 +1,11 @@
-// Run on an isolated M3/M4 project with three populated cards and fresh simulator data.
+// Run on an isolated project with three populated cards and fresh simulator data.
 const assert = require("node:assert/strict");
 const { execFileSync } = require("node:child_process");
 const { chromium } = require("playwright");
 
 async function main() {
   const project = process.argv[2];
-  if (!/^wardzero-m[34]-[a-z0-9-]+$/.test(project ?? "")) throw new Error("Supply an isolated M3/M4 test project.");
+  if (!/^wardzero-(?:m[34]|prem7)-[a-z0-9-]+$/.test(project ?? "")) throw new Error("Supply an isolated test project.");
   const compose = (...args) => execFileSync("docker", ["compose", "-p", project, ...args], { encoding: "utf8" });
   const base = "http://" + compose("port", "app", "8000").trim();
   const browser = await chromium.launch({ channel: "msedge", headless: true });
