@@ -58,6 +58,8 @@ High/watch deadlines are 30/60-second demonstration settings. Escalate once from
 
 M5 implementation note, 2026-11-07. Reuse the existing seeded primary/backup foreign keys, patient-first locks and one periodic loop. Persist risk recovery count and last qualifying observation on the episode; only new current complete readings without any firing rule count. Reset on concern, incomplete assessment or a freshness break, and recheck freshness at resolution. Observation clearing/expiry and upload retries cannot fabricate recovery. Existing episodes conservatively start counting at zero on upgrade. Preserve the existing return-to-primary behavior for reopened response cycles, retaining all previous events. Record response duration from the latest opening/reopening and separately from assignment, plus the resolution actor and literal note. Match exact command payloads before applying new state transitions so a lost old response can be retried after reassignment without acknowledging a new cycle. These are implementations of the approved lifecycle, with no additional escalation tier, identity system or external delivery.
 
+2026-11-08 inbox correction (user requested). Primary caregivers retain visibility of active episodes after backup escalation; current-assignee mutation permissions stay unchanged. Inbox ordering uses the latest response-cycle opening/reopening time, descending with an ID tie-breaker, rather than the episode's original creation time. Assignment counts and the assignee-filtered resolved archive retain their existing meaning.
+
 ## D09 — One application worker and recoverable live updates
 
 Accepted. Run one Uvicorn worker. Use WebSockets for invalidation, bounded client queues, REST snapshots on reconnect, and polling fallback.
@@ -65,6 +67,8 @@ Accepted. Run one Uvicorn worker. Use WebSockets for invalidation, bounded clien
 This supports the small demo without shared connection infrastructure. PostgreSQL remains authoritative if notifications are missed. Polling is built first, allowing the workflow to function before realtime polish. Future multi-worker deployment requires a separate coordination design.
 
 M6 implementation note, 2026-11-07. Add a process-local connection hub and the pinned `wsproto` transport while preserving one Uvicorn worker and the existing periodic loop. Transaction-owning services publish only after commit; the helper logs notification failure without changing a saved result. Bound each connection to 32 queued messages and a three-second send wait. Keep ten-second heartbeats, REST reconciliation, 15/five-second polling, and explicit cached-data states. A 25-second missing-message watchdog switches to fallback immediately rather than waiting for a silent peer's close handshake. Batch invalidations for 80 milliseconds and serialize follow-up batches to avoid losing updates during an in-flight fetch. These implement D09; reliable notification delivery, multi-worker coordination and another durable queue remain outside this prototype.
+
+2026-11-08 refresh correction. Process invalidations independently per query family, retaining serialized follow-up fetches within each family. The previous cross-family batch awaited slow history queries before refreshing new inbox hints. Polling, reconnect reconciliation and PostgreSQL authority remain unchanged.
 
 ## D10 — Local synthetic demonstration and demo identities
 
@@ -83,3 +87,5 @@ Deliver durable monitoring by M1 and basic caregiver response by M2. Add resilie
 Accepted. Keep readings, assessments, observations, events, and simulator records throughout the hackathon. Ordinary startup preserves state. Use a deliberate documented reset procedure.
 
 Expected data volume fits ordinary PostgreSQL tables. Automatic deletion, partitioning, and real patient retention policies are deferred. Retained records allow identifier reconciliation and inspection of the failure demonstration.
+
+M7 verification workflow, 2026-11-08. Persist the four approved scenario selections in the simulator's existing SQLite volume and apply them before frame commit. Use isolated Compose projects for the full acceptance runner and two browser rehearsals, preserving their evidence volumes. Record the real nine-step workflow, ID comparisons and exact resolved-history comparison after restart. Package source with hashes without including local secrets or generated evidence in Docker build contexts. The user prohibited commits and explicitly chose to leave the Git-tag criterion pending; an untagged source ZIP does not satisfy that criterion. No rule, lifecycle timing, service topology or deployment scope changes.

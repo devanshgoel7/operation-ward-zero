@@ -58,7 +58,7 @@ Identical repeated readings return success without repeating side effects. Confl
 
 ## Rules, context, and freshness
 
-Assess concern as none/watch/high and data quality as fresh/incomplete/stale/unavailable. Show last known concern with its timestamp when current assessment is unavailable. Use the UI wording “No configured concern detected” for complete evidence without a firing rule.
+Assess concern as none/watch/high and data quality as fresh/incomplete/stale/unavailable. The dashboard displays No risk for a complete assessment with no firing rule, Low for one distinct Watch signal, Medium for two or more, and High for a High finding. Distinct signals are counted by vital metric or observation tag, so a threshold and trend for the same metric count once. Use “No configured concern detected” for No risk and summarize saved findings for the other levels. Show Unknown when current evidence is insufficient or unavailable, including when the snapshot is unverified. A supported concern can still appear with incomplete or unavailable vitals. Show the last known concern and timestamp separately, using Watch for a previous Watch assessment whose findings are unavailable. The inbox uses the same display labels for saved evidence and shows the alert's own peak priority separately.
 
 These approved thresholds are fictional demonstration parameters. They provide no clinically validated alarm protocol. Strict comparisons apply, and high takes precedence.
 
@@ -105,6 +105,7 @@ Kinds are risk, monitoring_gap, and delayed_review. Status transitions are open 
 - A higher priority reopens an acknowledged episode and requires acknowledgement again.
 - Save deadlines in PostgreSQL. Escalate unacknowledged alerts once from primary to backup.
 - An alert already assigned to backup remains visibly unacknowledged without another escalation tier.
+- Active escalated alerts remain visible in the primary caregiver's inbox as well as the current assignee's inbox. Only the current assignee can acknowledge or resolve. Sort the inbox by response_started_at descending (latest opening/reopening), with ID descending for ties; show that timestamp on each episode.
 - Acknowledgement stops the pending escalation timer.
 - Risk resolution requires acknowledgement, a note, and three consecutive fresh complete readings with no firing rules.
 - Monitoring-gap alerts automatically resolve after three fresh complete readings.
@@ -182,25 +183,30 @@ Local reads require no login. Actor mutations carry X-Demo-Caregiver-Id for attr
 | GET /api/v1/alerts/{id} | Path ID | alert and events, local |
 | POST /api/v1/alerts/{id}/acknowledge | command_id | Updated alert, current assignee |
 | POST /api/v1/alerts/{id}/resolve | command_id, note | Updated alert, current assignee, 409 if conditions fail |
-| GET /api/v1/rules | None | version, thresholds, trend_rules, timing, local |
+
+The proposed `GET /api/v1/rules` route remains planned. The current app exposes rule evidence through saved assessments and alert responses.
 
 Reuse observation UUIDs and action command IDs until the result is known. Replays produce no duplicate lifecycle events. Conflicting ID reuse returns 409. Generate frontend API types from /openapi.json during implementation.
 
 WebSocket /api/v1/ws emits patient.updated, alert.updated, system.status, and heartbeat. Its envelope includes type, optional patient_id/alert_id/revision, and server_time. Refetch dashboard and selected patient on connection/reconnection. Retain periodic polling. Bound outbound queues and disconnect slow clients so ingestion remains independent.
 
+Refresh query families independently: serialize follow-up hints within each family, but never let a slow history request block dashboard/inbox refreshes. Reconnection is complete after all queued families finish reconciliation.
+
 M6 implementation detail: transaction-owning services publish synchronous, best-effort hints only after leaving the successful transaction. A failed notification cannot turn a saved reading or caregiver action into a failed receipt. Each connection has a 32-message queue; overflow evicts that subscriber, and a three-second send timeout bounds a blocked socket. The socket sender emits a heartbeat every ten seconds even during update traffic. The existing five-second loop publishes committed freshness, observation-expiry and escalation changes plus a system-status hint to refresh readiness. No second periodic worker, notification persistence, database migration or additional service is required.
 
 The browser batches invalidations for 80 milliseconds and serializes subsequent batches so a change arriving during a request gets another fetch. It refreshes all active dashboard/history/alert/readiness queries on connection and reconnection. Connected polling uses 15 seconds; connecting, reconciling and disconnected polling uses five seconds. A ten-second opening timeout and 25-second missing-message watchdog enter fallback immediately, without waiting for a potentially stalled close handshake. Reconnection backs off from one to 15 seconds. Eight-second REST timeouts expose stalled reads or unconfirmed writes. Cached snapshots older than 20 seconds, or failed dashboard refreshes, visibly mark patient/context/inbox state unverified. These are transport settings, separate from the approved 30-second patient-data freshness rule.
 
-The simulator CLI will support run, scenario <patient> <stable|deterioration|recovery|missing>, status, replay <reading-id>, and verify. Store selected scenarios in SQLite. Exercise real network/service interruptions.
+The simulator runs with `python -m simulator.run`. `python -m simulator.scenario <patient> <stable|deterioration|recovery|missing>` stores a per-device selection in SQLite; subsequent generated frames apply it before their durable commit. Stable/recovery uses heart rate 70 and SpO2 99; deterioration uses 90 and 96; missing sets SpO2 null. Other vital measurements retain ordinary synthetic generation. Existing frames are never modified. Selecting a scenario cancels the short alert trigger; `simulator.trigger_alert` clears a persistent selection before its existing six-reading sequence. `python -m simulator.recovery <status|drain|verify>` inspects, drains or reconciles IDs. Replay and lost-receipt checks use the acceptance harness. Exercise real network/service interruptions. See the [demo runbook](DEMO_RUNBOOK.md).
 
 ## Dashboard and operational evidence
 
-Use one page with three patient cards, selected vitals and timestamps, quality status, a selectable-metric chart, explanations, observations, caregiver inbox filtering, lifecycle controls/history, and synchronization status. Pair colors with text/icons. Confirm mutations only after server success. Retain failed drafts visibly.
+Use one dashboard with section navigation, snapshot summary counts, a reading-quality breakdown, and a responsive roster with vitals and timestamps for three patients. Highlight the current section as the user scrolls and keep anchor links available for direct navigation. Place the roster before the chart. Mark the selected row, synchronize patient selectors in the chart and observation panels, and retain the selection through tab reloads. Display the target patient and demo caregiver on the observation form. The top-bar demo caregiver selector controls attribution and inbox filtering. Keep concern and data quality separate, pair colors with text, and show synchronization and readiness status. Confirm mutations only after server success. Retain failed drafts visibly.
 
 M4 adds a selected-patient chart for all five metrics using the last 30 minutes of observed-time history (newest 2,000 rows, with a visible limit notice if truncated). Nulls and gaps over ten seconds break the chart line. The observation form uses the same demo caregiver selection as the inbox. Unconfirmed submission payloads and UUIDs survive reload in session storage, keyed by patient and actor; retry resends exactly that payload. Explicitly discarding a draft does not undo any server-side save.
 
 M5 adds saved deadlines, recovery progress, resolution notes, chronological lifecycle history and response durations to the caregiver inbox. The selected caregiver can load their newest 50 resolved episodes; all older history remains in the paginated REST interface. Unconfirmed resolution payloads and command IDs survive reload, keyed by alert and actor, and remain retryable from resolved episodes. The server enforces every resolution condition. M6 refreshes these existing views with live hints and retained polling, and exposes a saved acknowledgement retry even when its lost response was followed by a snapshot showing acknowledgement. Synchronization state, cached-data notices, keyboard focus/skip navigation and textual chart summaries support the existing one-page workflow.
+
+The roster displays one risk label per patient. While a risk alert awaits acknowledgement, the dashboard uses the strongest assessment saved in the current response cycle, even if readings recover. The label follows the assignment from Primary caregiver to Backup caregiver. Acknowledgement returns the roster to the current assessment. The acknowledged episode remains available in the caregiver inbox for resolution. The two demo caregiver records keep their existing IDs and use their role names for display.
 
 For recovery verification, stop generation and drain the queue. Compare identifier sets so locally committed IDs equal the disjoint union of server-stored, pending, and quarantined IDs. Valid fully drained fixtures must all exist on the server.
 

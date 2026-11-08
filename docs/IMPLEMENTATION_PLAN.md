@@ -1,14 +1,16 @@
 # Implementation plan and progress
 
-Updated 2026-11-07. Read [AGENTS.md](../AGENTS.md) before work. The approved behavior is in [ARCHITECTURE.md](ARCHITECTURE.md), with rationale in [DECISIONS.md](DECISIONS.md).
+Updated 2026-11-08. Read [AGENTS.md](../AGENTS.md) before work. The approved behavior is in [ARCHITECTURE.md](ARCHITECTURE.md), with rationale in [DECISIONS.md](DECISIONS.md).
 
 ## Current state
 
-M0 through M6 are complete. The simulator retains frames across transport and service outages. PostgreSQL stores threshold/trend/observation evidence, monitoring gaps, delayed-review episodes and the complete caregiver lifecycle. The dashboard adds post-commit WebSocket hints, REST reconciliation, retained polling, synchronization/cached-data states and keyboard/chart improvements to the existing caregiver workflow. The [M6 walkthrough](../README.md#verify-m6) describes the implemented behavior and verification. The user approved the M6 plan before edits and prohibited commits. All M6 work remains uncommitted; M7 is not authorized.
+M0 through M6 are complete. The simulator retains frames across transport and service outages. PostgreSQL stores threshold, trend, and observation evidence, monitoring gaps, delayed-review episodes, and the complete caregiver lifecycle. The dashboard uses post-commit WebSocket hints, REST reconciliation, polling, and explicit synchronization and cached-data states. The [demo runbook](DEMO_RUNBOOK.md#full-acceptance-command) documents the verification workflow. M6 was committed as `db7cd2d` after the subsequent authorization recorded below.
+
+The Bubble-inspired dashboard redesign is implemented and running on the regular Compose stack. The sidebar links to sections of one page, and the chart and observation form share the selected patient. See the redesign handoff below for browser and service evidence.
 
 The workspace was empty when documentation creation began. During planning on 2026-11-05, Python and Node were absent from the inspected shell PATH. Docker CLI was present, its daemon was unreachable, and its user configuration could not be read in that session. Recheck these observations during M0. They do not establish the machine's permanent configuration.
 
-The M0 through M6 sections record executed checks. Earlier commit authorizations remain historical entries in the handoff log. M5 remains complete and its lifecycle/restart regression passed on M6. Its prior local commit is preserved. M6 is complete without a commit, as requested. M7 remains pending and was not started.
+The M0 through M6 sections record executed checks. Earlier commit authorizations remain historical entries in the handoff log. M7 implementation and full verification passed, including two recorded complete demos. M7 is not fully complete: the user prohibits commits and explicitly chose to leave the Git-tag criterion pending. The untagged source archive does not substitute for a Git tag. See the [M7 runbook](DEMO_RUNBOOK.md) and evidence below.
 
 ## Budget and priorities
 
@@ -27,7 +29,7 @@ P1, after P0 passes, includes a compact reliability export, connection-gap visua
 | M4 Historical trends and observations | 5 | 27 | Complete — local commit authorized; no push |
 | M5 Escalation and lifecycle completion | 4 | 31 | Complete — M6 regression passed; prior local commit preserved |
 | M6 Real-time dashboard polish | 5 | 36 | Complete — verified; commit and push authorized |
-| M7 Full verification and submission | 4 | 40 | Pending |
+| M7 Full verification and submission | 4 | 40 | Verification passed — Git-tag criterion pending by user instruction |
 | Contingency | 8 | 48 | Reserved |
 
 ## Common completion gate
@@ -58,7 +60,7 @@ Run container build, readiness smoke test, Python import test, and TypeScript ch
 | `./scripts/test-readiness.ps1` | Ready 200 before a real database stop. While stopped, live 200 and ready 503 with `database_unavailable` and a request UUID. After database restart, ready 200 with current migrations. |
 | Edge `--headless --virtual-time-budget=5000 --dump-dom http://127.0.0.1:8010/` with a fresh profile | Rendered the React heading “Environment status” and the fetched status “Service ready”. |
 
-The [README](../README.md#m0-contracts) records M0 requests, responses and repeatable checks. The existing [planned API contracts](ARCHITECTURE.md#public-interfaces) cover later milestones.
+The [demo runbook](DEMO_RUNBOOK.md#prerequisites-and-startup) gives current startup instructions. The running app exposes OpenAPI and readiness endpoints. The existing [planned API contracts](ARCHITECTURE.md#public-interfaces) cover later milestones.
 
 ### M1 — Durable monitoring vertical slice
 
@@ -191,7 +193,7 @@ Depends on M4. Implement persisted deadlines, backup assignment, resolution cond
 
 Test deadlines with a fake clock, restart recovery, acknowledgement/escalation races, repeated commands, and priority increases. Demonstrate primary timeout → backup acknowledgement → recovery → resolution. Done requires the common gate and durable lifecycle history.
 
-**Verification on 2026-11-07.** All six criteria passed. Migration `0008_resolution` preserves existing deadlines, assignments, evidence and commands while adding recovery and response metadata. Resolution enforces assignment, acknowledgement, note and kind-specific recovery under the existing patient lock. Original/peak evidence and earlier response cycles remain durable. The [README](../README.md#verify-m5) documents the API and demonstration.
+**Verification on 2026-11-07.** All six criteria passed. Migration `0008_resolution` preserves existing deadlines, assignments, evidence and commands while adding recovery and response metadata. Resolution enforces assignment, acknowledgement, note and kind-specific recovery under the existing patient lock. Original/peak evidence and earlier response cycles remain durable. The [technical documentation](TECHNICAL_DOCUMENTATION.md#8-alert-generation-acknowledgement-and-escalation) describes the implemented lifecycle.
 
 | Check run | Observed result |
 |---|---|
@@ -220,7 +222,7 @@ Depends on M5. Implement WebSocket invalidation, reconciliation, fallback pollin
 
 Run UI mutation/error tests, stale rendering checks, reconnect tests, typecheck/build, and a Playwright caregiver flow. Demonstrate the complete workflow through the finished dashboard. Done requires the common gate and usable disconnected/reconnected states.
 
-**Verification on 2026-11-07.** All five M6 criteria passed. Existing transactions, thresholds/context, recovery rules, persistence and caregiver attribution remain authoritative. No migration, frontend dependency, service or additional periodic worker was added. The only runtime dependency addition is hash-pinned `wsproto==1.3.2`. The [README](../README.md#verify-m6) documents live updates, fallback, retry behavior and reproducible checks.
+**Verification on 2026-11-07.** All five M6 criteria passed. Existing transactions, thresholds/context, recovery rules, persistence and caregiver attribution remain authoritative. No migration, frontend dependency, service or additional periodic worker was added. The only runtime dependency addition is hash-pinned `wsproto==1.3.2`. The [technical documentation](TECHNICAL_DOCUMENTATION.md#9-data-reliability-and-recovery) describes live updates, fallback and retries. The [demo runbook](DEMO_RUNBOOK.md#full-acceptance-command) gives reproducible checks.
 
 | Check run | Observed result |
 |---|---|
@@ -241,14 +243,38 @@ Review found and corrected three issues: the first M6 browser fixture assumed co
 
 Depends on M6. Complete scenario scripts, acceptance runner, operational documentation, and recording. Likely areas are tests, scripts, and docs.
 
-- [ ] Fresh startup follows documented commands.
-- [ ] The complete demo passes twice.
-- [ ] Reading IDs reconcile after recovery.
-- [ ] Alert state and history survive restart.
-- [ ] Required checks pass and limitations are documented.
+**Authorization and scope, 2026-11-08.** The user authorized M7 only, prohibited commits, and requested consultation on difficulties. Preserve all existing uncommitted changes. Add persistent simulator scenario selections, a fail-fast acceptance runner, the nine-step browser rehearsal with a backup recording, operational documentation, and an explicitly untagged source snapshot with SHA-256 hashes. Reuse existing backend/frontend/browser/failure checks; do not add product features beyond the documented scenarios. The user explicitly elected to leave the Git-tag criterion pending. The common gate's commit step is waived for this working session, but the tagged-submission acceptance item is not waived.
+
+The first rehearsal completed all nine demo stages, reconciled 174 generated/stored IDs and verified exact resolved state through a real app restart. Its final browser assertion timed out because reload reset the caregiver selector to Primary while the resolved archive was assigned to Backup. The test now explicitly reselects Backup after reload. Work paused for consultation; the user authorized the correction, full acceptance suite and two fresh rehearsals. This initial run is retained as diagnostic evidence, not counted as a passing complete demo. The corrected full verification passed below.
+
+- [x] Fresh startup follows documented commands.
+- [x] The complete demo passes twice.
+- [x] Reading IDs reconcile after recovery.
+- [x] Alert state and history survive restart.
+- [x] Required checks pass and limitations are documented.
 - [ ] A reproducible tagged submission and backup recording are prepared within the authorized workflow.
 
 Run backend suite, frontend tests/typecheck/build, selected end-to-end tests, real outage rehearsal, and a short continuous run. Done requires the common gate and reproducible submission evidence.
+
+**Verification on 2026-11-08.** `python scripts/test-acceptance.py --output artifacts/m7/full-verification` exited **0**, with all **19** recorded checks passing. Its isolated main project was `wardzero-prem7-1b0ace94f9`. `artifacts/m7/full-verification/acceptance.json` records exact commands, exit codes, durations and the source snapshot; adjacent logs retain full output. Host verification used Python 3.14, Node 24, Playwright 1.62.1, Edge and FFmpeg; the application uses the pinned Docker runtimes and lockfiles. The regular demo stack was not changed.
+
+| Check run | Observed result |
+|---|---|
+| `docker compose -p wardzero-prem7-1b0ace94f9 config -q` and `up --build -d --wait --wait-timeout 120` | Fresh named volumes, migration/seed startup and all three services succeeded on a random loopback port. All three patients delivered fresh readings. Migration is `0009_caregiver_labels (head)`. |
+| `docker compose -p wardzero-prem7-1b0ace94f9 exec -T app python -m pytest -q` | **93 passed** on real PostgreSQL, including transactions, constraints, concurrency, migration compatibility, thresholds/trends/context, deadlines, retries and restart behavior. One existing Starlette deprecation warning. |
+| `docker compose -p wardzero-prem7-1b0ace94f9 exec -T simulator python -m unittest discover -s simulator` | **7 passed**, including the new persistent scenario selection and committed-frame/sequence checks plus existing buffer, retry, quarantine and exact identifier regressions. Expected synthetic failure messages appeared. |
+| `docker build --target frontend -t wardzero-prem7-1b0ace94f9-frontend .` and `docker run --rm wardzero-prem7-1b0ace94f9-frontend npm run typecheck` | Production build and strict TypeScript passed. Browser integration tests below provide frontend tests; no separate Vitest/unit-test command existed or was added. |
+| `node scripts/test-dashboard-ui.cjs http://127.0.0.1:32849 artifacts/m7/full-verification` and `node scripts/test-quality-ui.cjs wardzero-prem7-1b0ace94f9` | Passed at 1440, 1024, 768 and 375 px: chart dimensions, no page overflow, navigation, synchronized patient selection, counts and stored readings. Quality tests passed actual staleness, reconnect, last-known concern, incomplete High, delayed delivery and persisted historical evidence. |
+| `python scripts/test-recovery.py` | Project `wardzero-m3-3fb0983c35` passed real network/app/database failures and simulator restart. Network loss accumulated **24 pending frames**, three stale patients and three gaps. Saved IDs/sequences survived restart. Database outage produced no false successful receipt. Lost committed receipt `318ed53e-1aec-4998-ac6e-8860f61ee931` retried with exactly one reading, assessment and alert event. **55 generated = 55 stored**; mixed fixture **58 = 56 stored + 1 pending + 1 quarantined**, with empty discrepancy/overlap sets. |
+| `node scripts/test-context-ui.cjs` | Passed both trends, combination/observation-only explanations, stored evidence/chart, caregiver attribution, literal notes, lost-response retry and restart expiry. Project `wardzero-m4-ui-1794124519066`. |
+| `node scripts/test-lifecycle-ui.cjs` | Passed backup handoff, acknowledgement, recovery, resolution, retained drafts/replay, inbox visibility/order and durable history through two restarts. Real escalation processed **543 ms** after its saved deadline. Project `wardzero-m5-ui-1794124545724`. |
+| `node scripts/test-realtime-ui.cjs` | Passed real transport cut, REST reconciliation, polling fallback, silent heartbeat loss, cached/unknown/incomplete/stale states, retained mutation payloads, keyboard/laptop checks and real app restart. Reading render upper bounds **1187, 932, 890 ms**; alert **903 ms**; context clear **119 ms**. No browser page errors. Project `wardzero-m6-ui-1794124613709`. |
+| `node scripts/test-demo-ui.cjs artifacts/m7/full-verification/demo-1` | **Complete nine-step demo passed**, project `wardzero-m7-demo-1794124707198`. Continuous run **61.115 seconds / 12 checks**; real backup escalation **997 ms** after deadline; actual network disconnection retained **18 pending frames**. Post-recovery **171/171** IDs and final **186/186** IDs, with no pending/quarantined/missing/unexpected/overlapping IDs. Exact resolved state/history survived real app restart. |
+| `node scripts/test-demo-ui.cjs artifacts/m7/full-verification/demo-2` | **Second complete demo passed**, fresh project `wardzero-m7-demo-1794124924394`. Continuous run **61.061 seconds / 12 checks**; escalation **1195 ms** after deadline; **18 pending frames** during network loss. Post-recovery **171/171**, final **186/186**, all discrepancy sets empty. Exact resolved state/history survived restart; no browser page errors in either demo. |
+| Backup recording and source packaging | Both demo directories contain `backup-demo.mp4` and `demo.json`. FFprobe verified H.264 at **1366×900**, **194.0** and **197.5** seconds; extracted video frames were visually inspected. Source ZIP preparation verifies all file hashes and excludes `.env`, Git internals and generated artifacts. The acceptance-start source snapshot is `m7-untagged-beb307a40b74`; subsequent changes are documentation only. |
+| `python scripts/check-docs.py`, Python AST parsing, `node --check scripts/test-demo-ui.cjs`, `git diff --check` | Passed local links/anchors, syntax and whitespace. Final documentation and package verification are recorded in the handoff below. |
+
+**Remaining criterion.** Backup recordings and a hashed untagged source archive are prepared. A Git tag covering the tested working tree cannot be produced without committing its uncommitted source. The user explicitly chose to leave that part pending; the last checkbox and M7's overall completion therefore remain open. No other M7 implementation/test blocker remains. No commit, tag, push or next-milestone work was performed. The runbook documents startup, full acceptance, scenario controls, outage/reconciliation steps, evidence inspection, explicit reset and prototype/recording limitations.
 
 ## Failure acceptance matrix
 
@@ -303,13 +329,13 @@ M0 structure follow-up: separated health routes from FastAPI startup and the env
 
 M0 layout revision: extracted API routes, readiness services, response models and database configuration into backend packages. Separated frontend API access, pages and styles. Repeated the Compose build, pytest and outage script above against the revised layout. Both services started healthy, all three tests passed, and readiness recovered after restarting PostgreSQL. See the [project layout](../README.md#project-layout).
 
-**2026-11-06 — M1 handoff.** Durable monitoring for all three synthetic patients passed the checks above. Startup and rerun instructions are in the [README](../README.md#verify-m1). No open M1 blockers. Changes are uncommitted as requested. Await authorization before starting M2.
+**2026-11-06 — M1 handoff.** Durable monitoring for all three synthetic patients passed the checks above. Startup and rerun instructions are in the [demo runbook](DEMO_RUNBOOK.md#prerequisites-and-startup). No open M1 blockers. Changes are uncommitted as requested. Await authorization before starting M2.
 
-**2026-11-06 — M2 handoff.** All five acceptance items passed. The [walkthrough](../README.md#verify-m2) reproduces the explanation and acknowledgement in a separate Compose project. No open M2 blockers. Changes are uncommitted at the user's request. M3 awaits separate authorization.
+**2026-11-06 — M2 handoff.** All five acceptance items passed. The short simulator trigger reproduces a threshold breach. The [demo runbook](DEMO_RUNBOOK.md#nine-step-recorded-demo) exercises explanation and acknowledgement in an isolated project. No open M2 blockers. Changes are uncommitted at the user's request. M3 awaits separate authorization.
 
 Future entries should include milestone status, actual commands/results, outstanding issues, and the next authorized action. Preserve historical observations rather than silently rewriting them as current facts.
 
-**M2 live demonstration follow-up.** The [live walkthrough](../README.md#verify-m2) now uses the main dashboard and an on-demand simulator command. Rebuilt the simulator with `docker compose up --build -d --wait simulator`. Both tests passed with `docker compose exec -T simulator python -m unittest simulator.test_buffer`. In a disposable three-service Compose project, Edge showed the baseline, then Watch and High on Mira's card and alert after `docker compose exec -T simulator python -m simulator.trigger_alert`. All three patients advanced to new reading IDs, Mira returned to baseline, and one episode remained. The presentation stack on port 8010 was checked separately with all three readings present and zero active alerts. M3 remains pending.
+**M2 live demonstration follow-up.** The live walkthrough now uses the main dashboard and an on-demand simulator command. Rebuilt the simulator with `docker compose up --build -d --wait simulator`. Both tests passed with `docker compose exec -T simulator python -m unittest simulator.test_buffer`. In a disposable three-service Compose project, Edge showed the baseline, then Watch and High on Mira's card and alert after `docker compose exec -T simulator python -m simulator.trigger_alert`. All three patients advanced to new reading IDs, Mira returned to baseline, and one episode remained. The presentation stack on port 8010 was checked separately with all three readings present and zero active alerts. M3 remains pending.
 
 **Live caregiver handoff follow-up.** The requested demo rotation, persisted deadlines, backup assignment and renewed acknowledgement are implemented on the main stack. Docker Compose rebuilt successfully. The app pytest suite passed 42 tests, including a real PostgreSQL deadline made due and processed by the running worker, primary rejection after reassignment, backup acknowledgement, and reopening following recovery. All three simulator tests passed, including Mira → Aryan → Lena → Mira across command invocations. Full M5 verification, resolution and broader recovery testing remain pending. Work is uncommitted.
 
@@ -328,3 +354,88 @@ Future entries should include milestone status, actual commands/results, outstan
 **2026-11-07 - M5 commit authorization.** The user authorized committing the completed M5 implementation, tests and documentation locally, with no push. The verification evidence above remains applicable; the pre-commit diff check passed. No further milestone work was authorized.
 
 **2026-11-07 — M6 handoff.** The user approved the plan before edits. Completed all five M6 criteria with post-commit live hints, REST reconciliation, polling fallback, cached/unknown status, retained mutation retries and chart/keyboard improvements. Evidence: 92 backend tests, six simulator tests, strict TypeScript/build, the full M6 transport/mutation/staleness/keyboard/restart browser suite, M4 chart/context regression and M5 caregiver lifecycle/restart regression passed. Measured reading updates were 913–985 ms in the final run; alert and observation updates were also under two seconds. Documentation/UTF-8 and all 22 local links passed, as did the diff check. M5 remains complete with its prior commit preserved. Main dashboard is healthy at port 8010 with existing volumes intact; M6 fixtures are stopped with evidence retained. No open M6 failures or blockers. All M6 changes are uncommitted at the user's request. M7 was not started and requires separate authorization; no next milestone is authorized.
+
+**2026-11-07 — Dashboard redesign handoff.** Implemented the approved Bubble-inspired single page with reusable React components, a searchable patient roster, snapshot metrics and reading quality, and one patient selection for vitals and observations. The system health panel and demo caregiver picker use the existing endpoints and selection rules. The redesign changes the frontend, browser checks, and documentation.
+
+| Check run | Observed result |
+|---|---|
+| `docker compose -p wardzero-ui-design-check up -d --build --wait` with `APP_PORT=0` | Isolated stack healthy. Strict TypeScript and Vite production build passed. Vite reported the existing directive and chunk-size warnings. |
+| `node scripts/test-context-ui.cjs` and `node scripts/test-lifecycle-ui.cjs` | Passed chart and trend evidence, observation capture and retry, escalation, acknowledgement, resolution, and restart checks against isolated PostgreSQL fixtures. Primary timeout processed 618 ms after the saved deadline. |
+| `node scripts/test-realtime-ui.cjs` | Passed transport interruption, missed-alert reconciliation, WebSocket-only polling fallback, heartbeat loss, restart, retained mutation retries, and stale/unknown rendering. Reading updates rendered in 851–898 ms, alert in 926 ms, and observation clear in 68 ms. |
+| `node scripts/test-dashboard-ui.cjs` against the isolated stack and regular demo | Edge passed at 1440, 1024, 768, and 375 px. Chart widths were 725, 455, 433, and 325 px at 250 px high. The donut rendered, the page fit without horizontal overflow, and keyboard navigation, search/clear, shared patient selection, REST-derived counts, and the stored vital check passed. The regular demo had two active alerts during the count comparison. Inspected full desktop and phone renders from the isolated stack. |
+| `docker compose up -d --build --wait app`, `docker compose exec -T app alembic current`, and `docker compose -p wardzero-ui-design-check down` | Regular dashboard healthy at port 8010. Alembic reported `0008_resolution (head)`. Database and simulator container IDs and named volume mounts matched before and after. Isolated services stopped with their evidence volumes retained. |
+
+The local Markdown check verified 22 links and anchors, the frontend and documentation decoded as UTF-8, and `git diff --check` passed. The redesign is ready for review in the working tree. M7 remains pending and requires separate authorization.
+
+**2026-11-08 — Patient selection usability follow-up.** Placed the roster before the charts and added an explicit Review patient action with keyboard focus on the chart. The roster marks the selected row, both patient panels share the selection, and the observation form identifies the patient and demo caregiver. Selection persists on reload in the same tab. Added direct links to the observation form and caregiver inbox.
+
+| Check run | Observed result |
+|---|---|
+| `docker compose -p wardzero-patient-selection-check up -d --build --wait --wait-timeout 120` | Strict TypeScript and Vite production build passed, with the existing Vite warnings. |
+| `node scripts/test-dashboard-ui.cjs` against the isolated stack and `http://127.0.0.1:8010` | Edge passed at 1440, 1024, 768, and 375 px without horizontal overflow. Desktop keyboard and phone-width pointer checks verified the selected row, synchronized selectors, observation target, and reload persistence. Inspected desktop and phone screenshots. |
+| `node scripts/test-context-ui.cjs` and `node scripts/test-realtime-ui.cjs` | Both passed against isolated PostgreSQL fixtures. Verified observation attribution and retry, caregiver actions and history, live updates, staleness, and transport/restart recovery. Reading updates rendered in 926–993 ms. |
+| `docker compose up -d --build --wait app` and `docker compose -p wardzero-patient-selection-check down` | Regular app is healthy on port 8010 with the same database and simulator containers and volume mounts. Isolated services stopped with evidence retained. |
+
+The usability update is ready for review in the working tree. M7 remains pending.
+
+**2026-11-08 — Sidebar scroll follow-up.** The sidebar now highlights the section in view while scrolling. Direct links retain their anchor and focus behavior. The isolated `docker compose -p wardzero-sidebar-check up -d --build --wait` passed TypeScript and Vite. `node scripts/test-dashboard-ui.cjs` passed on the isolated and regular stacks. At 1440 and 375 px the highlight followed all six sections through System health and returned to Overview without changing the URL or keyboard focus. Section link checks passed at all four viewport widths. `docker compose up -d --build --wait app` left the regular app healthy at port 8010, and the isolated services were stopped with volumes retained. The fix is ready for review in the working tree.
+
+**2026-11-08 — Pre-M7 risk display handoff.** The roster and saved inbox evidence show Low, Medium, High, or Unknown with a plain-language reason. The roster retains separate data quality and timestamped last-known concern. The inbox continues to show each alert's saved peak priority separately. The display uses the existing assessment payload. English note suggestions were deferred during planning.
+
+| Check run | Observed result |
+|---|---|
+| `docker compose -p wardzero-prem7-risk-check up -d --build --wait --wait-timeout 120` with `APP_PORT=0` | Isolated stack healthy. Strict TypeScript and Vite passed with the existing directive and chunk-size warnings. |
+| `docker compose -p wardzero-prem7-risk-check exec -T app python -m pytest -q` | All 92 tests passed on PostgreSQL with the existing Starlette warning. Extended assertions verified the dashboard contract for incomplete High, observation-only Watch, and current Watch alongside a saved High alert peak. |
+| `node scripts/test-dashboard-ui.cjs` against the isolated loopback port | Edge passed at 1440, 1024, 768, and 375 px. Risk labels and reasons were visible with no horizontal overflow. Reviewed the desktop and phone screenshots. |
+| `node scripts/test-quality-ui.cjs wardzero-prem7-risk-check` | Passed stale and last-known display, monitoring-gap recovery after reconnect, delivery delay, and historical review across reload. With both Watch and High findings in an incomplete reading, the reason described the High finding. |
+| `node scripts/test-context-ui.cjs` | Passed trend, combination and observation-only reasons, opening and latest evidence, separate peak priority, observation attribution, lost-response retry, and restart expiry. |
+| `node scripts/test-lifecycle-ui.cjs` and `node scripts/test-realtime-ui.cjs` | Passed escalation, acknowledgement, resolution, saved history, retry, transport and restart regressions, and cached, incomplete, stale and last-known risk display. Reading updates rendered in 967–1367 ms. |
+
+The isolated stacks were stopped with their evidence volumes retained. All 22 local Markdown links and anchors, JavaScript syntax checks, and `git diff --check` passed. The display is ready for review in the working tree. M7 remains pending and requires separate authorization.
+
+**2026-11-08 — Live risk display deployment.** Rebuilt the regular app with `docker compose up -d --build --no-deps --wait --wait-timeout 120 app`. It was healthy on port 8010. The database and simulator container IDs and volume mounts matched before and after. `node scripts/test-dashboard-ui.cjs http://127.0.0.1:8010` verified visible risk labels and reasons at 1440, 1024, 768, and 375 px, alongside the existing dashboard checks.
+
+**2026-11-08 — Five-state risk progression.** The user chose one distinct Watch signal for Low and two or more for Medium. A complete assessment without a firing rule displays No risk, existing High findings display High, and unavailable evidence displays Unknown. The demo trigger now emits one Low, two Medium, and three High samples before returning to baseline. PostgreSQL rules and alert priorities retain their original behavior.
+
+`python -B -m unittest discover -s simulator -p 'test_*.py'` passed all six simulator tests after an authorized rerun outside the Windows sandbox resolved temporary SQLite directory access. The isolated `node scripts/test-realtime-ui.cjs` verified No risk → Low → Medium → High, Unknown, timestamps, and transport recovery. `node scripts/test-context-ui.cjs` passed the saved evidence, observation and retry checks. Rebuilt the live app and simulator with `docker compose up -d --build --no-deps --wait --wait-timeout 120 app simulator`. The PostgreSQL container and both volume mounts matched before and after. `node scripts/test-dashboard-ui.cjs http://127.0.0.1:8010` passed all four viewport checks. M7 remains pending.
+
+**2026-11-08 — Pending risk alert visibility.** The roster keeps a saved open risk alert and its assigned caregiver visible when current readings recover. The indicator follows primary-to-backup escalation and clears after the assigned caregiver acknowledges. The isolated `node scripts/test-lifecycle-ui.cjs` verified normal readings, reload, real escalation (401 ms after the deadline), backup acknowledgement, resolution and restart recovery. Rebuilt the regular app with `docker compose up -d --build --no-deps --wait --wait-timeout 120 app`. The database and simulator container IDs matched before and after. The live `node scripts/test-dashboard-ui.cjs http://127.0.0.1:8010` passed at 1440, 1024, 768 and 375 px. M7 remains pending.
+
+**2026-11-08 — Single retained risk label and caregiver role names.** The roster now displays the strongest assessment saved in the current unacknowledged response cycle in its existing risk badge. After acknowledgement it displays the current assessment. Migration `0009_caregiver_labels` updates the two seeded display names to Primary caregiver and Backup caregiver while preserving their IDs and prior attribution.
+
+The full PostgreSQL suite passed 93 tests via `docker compose -p wardzero-pending-risk-check exec -T app python -m pytest -q`. It covered Medium retention through a lower finding and normal readings, acknowledgement, and a new response cycle. `node scripts/test-lifecycle-ui.cjs` passed the single High badge through recovery, reload, escalation (269 ms after deadline), acknowledgement, resolution, and restart. `node scripts/test-context-ui.cjs` passed the observation and saved evidence regression. The first `node scripts/test-realtime-ui.cjs` run used a patient with an open observation alert for its Unknown assertion. The rerun used a patient whose alert had been resolved and passed progression, caching, polling, staleness, reconnection and restart checks. The app-only live rebuild applied `0009_caregiver_labels (head)` with the same PostgreSQL and simulator containers. The live dashboard returned both role names and passed `node scripts/test-dashboard-ui.cjs http://127.0.0.1:8010` at all four widths. JavaScript syntax checks and `git diff --check` passed. M7 remains pending.
+
+**2026-11-08 — Caregiver inbox bug fixes.** The user authorized three corrections: retain active escalated alerts in the primary inbox, sort newest first, and refresh alerts live. Active inbox filtering now includes the patient's primary caregiver as well as the current assignee. Only the assignee can acknowledge/resolve. Cards show their response-cycle opening/reopening time and sort by that time descending with ID tie-breaking. Query-family refreshes run independently so a stalled history fetch cannot block later dashboard/inbox hints; follow-up hints within each family remain serialized. Existing changes were preserved; no migration or dependency was added.
+
+Acceptance and executed evidence:
+
+| Check run | Observed result |
+|---|---|
+| `node scripts/test-lifecycle-ui.cjs` | Passed on isolated PostgreSQL: primary retained the escalated card with disabled acknowledgement; backup acknowledged and resolved; new and reopened episodes moved to the first position without reload. Real escalation lag was 521 ms. Saved history, lost-response retry and restart recovery passed. |
+| `node scripts/test-realtime-ui.cjs` | Passed with a deliberately blocked history response while subsequent risk/alert updates rendered without refresh. Alert latency was 916 ms; reading updates were 844–919 ms. Real transport interruption, polling fallback, heartbeat loss, cached/stale states, mutation retries and app restart passed. No browser page errors. |
+| `docker compose exec -T app python -m pytest -q` | 93 passed on disposable real PostgreSQL databases; one existing Starlette deprecation warning. An earlier attempt in the lifecycle fixture was interrupted by that fixture's intentional app stop, so the complete suite was rerun separately. |
+| Browser fixture image builds and `docker compose up -d --build --no-deps --wait --wait-timeout 120 app` | TypeScript and production build passed; regular app rebuilt and healthy on port 8010. Database and simulator services were not recreated; persistent volumes retained. |
+| `node scripts/test-dashboard-ui.cjs http://127.0.0.1:8010` | Passed at 1440, 1024, 768 and 375 px, including layout, sidebar, selections, REST counts and stored vitals. |
+| `node --check` for both changed browser scripts, local Markdown verification, `git diff --check` | Passed syntax, all 22 local links/anchors and whitespace checks. |
+
+The first realtime run passed the new live-update check but failed an old expected history count after the added fixture reading; correcting the count from two to three produced the passing full run above. Both isolated browser stacks stopped with evidence volumes retained. No outstanding blockers. Changes remain uncommitted. Next step is user review of these fixes; M7 remains pending and requires separate authorization.
+
+**2026-11-08 — M7 verification handoff.** Implemented persistent simulator scenarios, the acceptance runner, the complete recorded browser demo, source snapshot packaging, documentation verification and the [demo runbook](DEMO_RUNBOOK.md). After consultation on the initial test-script caregiver-selection issue, the authorized full rerun passed all 19 checks, 93 PostgreSQL-backed tests, seven simulator tests, frontend build/typecheck, all selected browser regressions and two fresh complete demos. Both demos reconciled 171/171 IDs after the outage and 186/186 at completion, retained exact resolved state/history across restart, and produced inspected backup MP4s. All details and commands are in the M7 evidence table; the machine-readable report and logs are in `artifacts/m7/full-verification/`.
+
+Final review verified Python/JavaScript syntax, all 28 local Markdown links/anchors, `git diff --check`, playable recordings and exclusion of secrets/generated data from the source archive. Packaging twice produces the same source ZIP SHA-256; the final archive path, hashes and comparison against the tested source are saved in `artifacts/m7/full-verification/submission.json`. Application and test-script contents match the acceptance-start snapshot; only documentation changed afterward. The isolated services are stopped with evidence volumes retained. The existing regular demo stack and prior uncommitted changes remain intact.
+
+M7's first five acceptance items are complete. The backup recording portion of the sixth item is complete, but the **Git-tag portion remains pending by the user's explicit choice**. No other failed check or implementation blocker remains. No commit, tag or push was made. The next action is user review; completing the remaining tagged submission requires separate commit/tag authorization. No later milestone or optional P1 work is authorized or started.
+
+**2026-11-08 — Judge-demo readiness spot check.** `git rev-list --left-right --count HEAD...origin/main` returned `0 0` at `e503855`. The committed history contains M0 through M6. The M7 scenario and rehearsal files and later dashboard changes are local working-tree changes. `docker compose ps` and `GET /health/ready` confirmed the regular dashboard was ready on port 8010. Two `GET /api/v1/dashboard` snapshots six seconds apart showed fresh, advancing reading IDs for all three patients and two existing active alerts. `docker compose exec -T app alembic current` reported `0009_caregiver_labels (head)`. The read-only `node scripts/test-dashboard-ui.cjs http://127.0.0.1:8010` passed at 1440, 1024, 768 and 375 px. `docker compose exec -T simulator python -m simulator.recovery status` reported accepted frames with zero pending or quarantined frames. The running simulator returned `No module named simulator.scenario` for `python -m simulator.scenario --help`.
+
+The saved acceptance report records 19/19 successful checks and two complete rehearsals. The SHA-256 of the exact tested source ZIP matches the report. The full suite was not rerun during the spot check. `git diff --check` passed. After the concurrent README and documentation update, `python scripts/check-docs.py` passed all 39 local links and anchors. For a clean judge rehearsal, start a fresh Compose project from the tested source snapshot and build both the app and simulator. The regular demo services and volumes were left in place. The Git-tag criterion remains pending.
+
+**2026-11-08 — Hackathon deliverables preparation.** Rewrote the project README, added the private-value configuration template, updated the runbook and architecture references, and prepared the [standalone technical report](TECHNICAL_DOCUMENTATION.md) with four cropped captures from the recorded verification. The source ZIP includes the template and report figures. Application code, migrations, simulator behavior, dependency lockfiles, and test logic match the verified source byte for byte. The packaging helper adds the template to the archive allowlist.
+
+| Preparation check | Result |
+|---|---|
+| Extracted source and README PowerShell quick start | In isolated Compose project `wardzero-deliverables-814b247486`, the setup generated private values and preserved them on rerun. An initial harness invocation failed before startup when an empty Compose environment override was supplied. The corrected run passed `docker compose config -q`, build, and startup with fresh volumes. The app bound to loopback, readiness reported ready, and `alembic current` reported `0009_caregiver_labels (head)`. |
+| Dashboard and API smoke check | The loopback dashboard API returned three patients with fresh readings. The OpenAPI route inventory matched the documented endpoints. `node scripts/test-dashboard-ui.cjs <isolated-url>` passed at 1440, 1024, 768, and 375 px. The isolated stack was stopped with both evidence volumes retained. See `artifacts/deliverables-smoke.json`. |
+| Documentation and package | `python -B scripts/check-docs.py` and `git diff --check` passed. The Mermaid flowchart rendered in Edge, and the four figures were visually checked against the saved captures. Two packaging runs produced the same archive hash. The 106-file manifest matches the working tree, with no runtime or test changes from the tested baseline. See `artifacts/deliverables-verification.json`. |
+
+The smoke check is separate from the full acceptance run documented above. Publication was authorized in separate feature, rehearsal, and documentation commits. The rewritten README remains local. The Git-tag criterion stays pending.
