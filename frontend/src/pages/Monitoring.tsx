@@ -2,7 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useSync } from "../api/Realtime";
 import { fetchDashboard, type PatientSnapshot } from "../api/monitoring";
+import type { components } from "../api/schema";
 import { DashboardHeader, DashboardShell, Icon, Panel, StatusBadge } from "../components/DashboardShell";
+import { AssessmentRisk, lastKnownRiskLabels } from "../components/AssessmentRisk";
 import { OverviewMetrics, ReadingQuality } from "../components/MonitoringOverview";
 import { VitalHistory } from "../components/VitalHistory";
 import { EnvironmentStatus } from "./EnvironmentStatus";
@@ -26,12 +28,14 @@ function PatientPicker({ patients, patientId, onSelect }: {
   </label>;
 }
 
-function PatientRow({ snapshot, selected, outdated, onReview }: {
-  snapshot: PatientSnapshot; selected: boolean; outdated: boolean; onReview: (id: string) => void;
+function PatientRow({ snapshot, selected, outdated, pendingRisk, onReview }: {
+  snapshot: PatientSnapshot; selected: boolean; outdated: boolean; pendingRisk?: components["schemas"]["Alert"];
+  onReview: (id: string) => void;
 }) {
   const { patient, latest_reading: reading, data_quality: quality } = snapshot;
   const assessment = outdated ? null : snapshot.current_assessment;
-  const showLastKnown = !assessment || assessment.concern === null;
+  const retainedRisk = pendingRisk?.pending_risk_assessment;
+  const showLastKnown = !retainedRisk && (!assessment || assessment.concern === null);
   const initials = patient.display_name.split(/\s+/).slice(0, 2).map(name => name[0]).join("");
   return <article data-reading-id={reading?.reading_id}>
     <div className="patient-identity">
@@ -52,21 +56,19 @@ function PatientRow({ snapshot, selected, outdated, onReview }: {
     <div className="patient-status">
       <div><span className="visually-hidden">Data quality </span><StatusBadge tone={outdated ? "unknown" : quality}>
         {outdated ? "Unknown — showing cached data" : quality}</StatusBadge></div>
-      {(assessment?.concern === "watch" || assessment?.concern === "high") &&
-        <StatusBadge tone={assessment.concern}>{assessment.concern} concern</StatusBadge>}
     </div>
     <div className="patient-reading-detail">
+      <p className="patient-risk">
+        <AssessmentRisk assessment={retainedRisk ?? assessment} quality={quality} unverified={outdated && !retainedRisk}/>
+        {pendingRisk && <span className="pending-risk">{" · "}{outdated ? "Last received status · " : ""}Awaiting acknowledgement by{" "}
+          {pendingRisk.assignee_id === patient.backup_caregiver_id ? "Backup caregiver" : "Primary caregiver"}.</span>}
+      </p>
       {snapshot.delivery_delayed && <p>Delayed delivery · over 10 seconds</p>}
       {showLastKnown && snapshot.last_known_concern && snapshot.last_known_observed_at &&
-        <p>Last known concern · {snapshot.last_known_concern} at {timestamp(snapshot.last_known_observed_at)}</p>}
-      {reading ? <>
-        {assessment?.reading_id === reading.reading_id ? <>
-          {assessment.concern === "none" && <p>No configured concern detected</p>}
-          {assessment.concern === null && <p>Insufficient measurements</p>}
-          {assessment.data_quality === "incomplete" && <p>Incomplete reading</p>}
-        </> : <p>Assessment unavailable for this reading</p>}
-        <p className="times"><span>Observed {timestamp(reading.observed_at)}</span><span>Received {timestamp(reading.received_at)}</span></p>
-      </> : <p>Waiting for first reading</p>}
+        <p>Last known concern · {lastKnownRiskLabels[snapshot.last_known_concern]} at {timestamp(snapshot.last_known_observed_at)}</p>}
+      {reading && assessment?.reading_id === reading.reading_id && assessment.data_quality === "incomplete" &&
+        <p>Incomplete reading</p>}
+      {reading && <p className="times"><span>Observed {timestamp(reading.observed_at)}</span><span>Received {timestamp(reading.received_at)}</span></p>}
     </div>
   </article>;
 }
@@ -93,6 +95,8 @@ export function Monitoring() {
   const caregivers = dashboard?.caregivers ?? [];
   const actor = caregivers.find(caregiver => caregiver.id === selectedActor)?.id ?? caregivers[0]?.id ?? "";
   const patients = dashboard?.patients ?? [];
+  const pendingRisks = new Map(dashboard?.active_alerts.filter(alert => alert.kind === "risk" && alert.status === "open")
+    .map(alert => [alert.patient_id, alert]));
   const selected = patients.find(snapshot => snapshot.patient.id === selectedPatient) ?? patients[0];
   const filter = search.trim().toLocaleLowerCase();
   const visiblePatients = patients.filter(snapshot => snapshot.patient.display_name.toLocaleLowerCase().includes(filter));
@@ -135,7 +139,8 @@ export function Monitoring() {
           <span>Patient</span><span>Heart rate</span><span>Oxygen saturation</span><span>Blood pressure</span><span>Temperature</span><span>Monitoring status</span>
         </div>
         <div className="patients">{visiblePatients.map(snapshot => <PatientRow key={snapshot.patient.id}
-          snapshot={snapshot} selected={snapshot.patient.id === selected?.patient.id} outdated={outdated} onReview={reviewPatient}/>)}</div>
+          snapshot={snapshot} selected={snapshot.patient.id === selected?.patient.id}
+          outdated={outdated} pendingRisk={pendingRisks.get(snapshot.patient.id)} onReview={reviewPatient}/>)}</div>
       </> : <p className="empty-state">{filter && dashboard ? "No patients match your search." : dashboard ? "No patients available." : "Waiting for the first patient snapshot."}</p>}
     </Panel>
     <div className="overview-charts">
@@ -156,7 +161,7 @@ export function Monitoring() {
         <p className="empty-state">Select a patient when a snapshot is available.</p>}
     </Panel>
     <Panel id="caregiver-inbox" title="Caregiver inbox" className="risk-panel"
-      description="Review assigned alerts and saved activity. The demo caregiver selector supplies attribution only.">
+      description="Review assigned alerts and alerts for your primary patients, including backup escalations. The demo caregiver selector supplies attribution only.">
       {dashboard ? <RiskAlerts dashboard={dashboard} actor={actor} outdated={outdated}/> :
         <p className="empty-state">Waiting for the first alert snapshot.</p>}
     </Panel>

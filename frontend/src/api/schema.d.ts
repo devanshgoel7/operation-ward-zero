@@ -263,6 +263,8 @@ export interface components {
             recovery_observed_at: string | null;
             original_assessment: components["schemas"]["Assessment"] | null;
             latest_assessment: components["schemas"]["Assessment"] | null;
+            /** Pending Risk Assessment */
+            pending_risk_assessment?: components["schemas"]["Assessment"] | null;
             /** Revision */
             revision: number;
         };
@@ -326,6 +328,8 @@ export interface components {
             recovery_observed_at: string | null;
             original_assessment: components["schemas"]["Assessment"] | null;
             latest_assessment: components["schemas"]["Assessment"] | null;
+            /** Pending Risk Assessment */
+            pending_risk_assessment?: components["schemas"]["Assessment"] | null;
             /** Revision */
             revision: number;
             /** Events */

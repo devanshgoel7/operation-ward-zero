@@ -16,13 +16,12 @@ async function main() {
     await page.locator(".patients article[data-reading-id]").nth(2).waitFor();
     const card = page.locator(".patients article").first();
     // A previous run may still have a recovering gap. Start from three live monitors.
-    await page.waitForFunction(() => document.querySelectorAll(".patients article strong").length === 3 &&
-      [...document.querySelectorAll(".patients article strong")].every(el => el.textContent === "fresh"));
+    await page.waitForFunction(() => document.querySelectorAll('.patient-status .status-badge[data-tone="fresh"]').length === 3);
     const initial = await (await fetch(base + "/api/v1/dashboard")).json();
     if (initial.active_alerts.some(a => a.kind === "monitoring_gap")) throw new Error("Wait for three complete recovery frames before running this fixture.");
     compose("stop", "simulator");
     await context.setOffline(true);
-    await card.getByText("Refresh unavailable").waitFor({ timeout: 20000 });
+    await page.getByRole("alert").getByText(/Refresh failed/).waitFor({ timeout: 20000 });
     // Wait for the actual worker to persist a gap while this browser is disconnected.
     let snapshot;
     const deadline = Date.now() + 60000;
@@ -43,7 +42,7 @@ from urllib.request import Request, urlopen
 for age, oxygen in [(60, 87), (12, 88)]:
     payload = dict(reading_id=str(uuid.uuid4()), device_id="30000000-0000-0000-0000-000000000001",
                    sequence=time.time_ns(), observed_at=(datetime.now(UTC)-timedelta(seconds=age)).isoformat(),
-                   heart_rate_bpm=75, spo2_pct=oxygen, systolic_mmhg=119, diastolic_mmhg=79, temperature_c=None)
+                   heart_rate_bpm=115, spo2_pct=oxygen, systolic_mmhg=119, diastolic_mmhg=79, temperature_c=None)
     req = Request("http://localhost:8000/api/v1/readings", data=json.dumps(payload).encode(),
                   headers={"Content-Type":"application/json","X-Simulator-Key":os.environ["SIMULATOR_KEY"]})
     with urlopen(req) as response:
@@ -52,7 +51,8 @@ for age, oxygen in [(60, 87), (12, 88)]:
     execFileSync("docker", ["compose", "-p", project, "exec", "-T", "app", "python", "-"], { input: fixture });
     await card.getByText(/Delayed delivery/).waitFor();
     await card.getByText("Incomplete reading").waitFor();
-    await card.getByText("high concern").waitFor();
+    await card.getByText("High risk", { exact: true }).waitFor();
+    await card.getByText("Oxygen saturation was below the demo limit (88%).", { exact: true }).waitFor();
     async function verifyReview() {
       const saved = await (await fetch(base + "/api/v1/dashboard")).json();
       const review = saved.active_alerts.find(a => a.kind === "delayed_review" && a.patient_id === saved.patients[0].patient.id);

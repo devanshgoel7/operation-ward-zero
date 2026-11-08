@@ -35,7 +35,7 @@ def main() -> None:
                 index = tuple(devices).index(patient)
                 connection.execute("UPDATE demo_rotation SET next_index = ?", ((index + 1) % len(devices),))
     if queued:
-        print(f"{patient.title()}: queued three samples at 93% followed by three at 88%, then baseline.")
+        print(f"{patient.title()}: queued one Low, two Medium and three High samples, then baseline.")
     else:
         print(f"{patient.title()}: scenario already in progress.")
 

@@ -51,6 +51,8 @@ def generate(connection: sqlite3.Connection, device_id: UUID, observed: datetime
         if demo is not None:
             offset = sequence - demo["first_sequence"]
             frame["spo2_pct"] = 93 if offset < 3 else 88
+            if 1 <= offset < 3:
+                frame["heart_rate_bpm"] = 115
             if offset >= 5:
                 connection.execute("DELETE FROM alert_demo WHERE device_id = ?", (str(device_id),))
         connection.execute("""

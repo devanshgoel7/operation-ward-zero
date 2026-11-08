@@ -100,6 +100,9 @@ def test_explained_episode_and_acknowledgement(client: TestClient) -> None:
     refreshed = client.get(detail).json()
     assert (refreshed["status"], refreshed["peak_priority"], refreshed["revision"]) == ("acknowledged", "high", 4)
     assert refreshed["latest_assessment"]["concern"] == "watch"
+    dashboard = client.get(f"{API}/dashboard").json()
+    assert dashboard["patients"][0]["current_assessment"] == refreshed["latest_assessment"]
+    assert dashboard["active_alerts"][0]["peak_priority"] == "high"
 
     other = frame(1) | {"device_id": dashboard["patients"][1]["patient"]["device_id"], "heart_rate_bpm": 144}
     assert client.post(f"{API}/readings", json=other).status_code == 201
@@ -109,6 +112,26 @@ def test_explained_episode_and_acknowledgement(client: TestClient) -> None:
     conflict = client.post(f"{API}/alerts/{other_alert['id']}/acknowledge", json=command, headers=primary)
     assert conflict.status_code == 409 and conflict.json()["error"]["code"] == "command_conflict"
     assert client.get(f"{API}/alerts/{other_alert['id']}").json()["status"] == "open"
+
+
+def test_open_risk_retains_strongest_assessment_until_acknowledgement(client: TestClient) -> None:
+    dashboard = client.get(f"{API}/dashboard").json()
+    assert [actor["display_name"] for actor in dashboard["caregivers"]] == ["Primary caregiver", "Backup caregiver"]
+    primary = dashboard["patients"][0]["patient"]["primary_caregiver_id"]
+    for sequence, spo2, heart_rate in [(1, 93, 73), (2, 93, 115), (3, 93, 73), (4, 99, 73)]:
+        client.post(f"{API}/readings", json=frame(sequence) | {"spo2_pct": spo2, "heart_rate_bpm": heart_rate}).raise_for_status()
+    dashboard = client.get(f"{API}/dashboard").json()
+    [alert] = dashboard["active_alerts"]
+    assert dashboard["patients"][0]["current_assessment"]["concern"] == "none"
+    assert alert["latest_assessment"]["concern"] == "watch"
+    assert {f["metric"] for f in alert["pending_risk_assessment"]["findings"]} == {"spo2_pct", "heart_rate_bpm"}
+    response = client.post(f"{API}/alerts/{alert['id']}/acknowledge", json={"command_id": str(uuid4())},
+                           headers={"X-Demo-Caregiver-Id": primary})
+    assert response.status_code == 200 and response.json()["pending_risk_assessment"] is None
+    client.post(f"{API}/readings", json=frame(5) | {"spo2_pct": 93}).raise_for_status()
+    [reopened] = client.get(f"{API}/dashboard").json()["active_alerts"]
+    assert reopened["status"] == "open"
+    assert reopened["pending_risk_assessment"]["id"] == reopened["latest_assessment"]["id"]
 
 
 def test_missing_and_historical_readings(client: TestClient) -> None:

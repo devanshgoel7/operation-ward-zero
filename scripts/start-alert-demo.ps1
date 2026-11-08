@@ -29,7 +29,7 @@ with httpx.Client(base_url="http://127.0.0.1:8000/api/v1") as client:
         print(receipt.raise_for_status().json())
 '@ | docker compose -p wardzero-m2-demo exec -T app python -
     if ($LASTEXITCODE -ne 0) { throw 'Could not seed the M2 demo readings.' }
-    Write-Host "Open http://127.0.0.1:$Port/ to inspect Mira Shah's evidence and acknowledge as Alex Morgan."
+    Write-Host "Open http://127.0.0.1:$Port/ to inspect Mira Shah's evidence and acknowledge as Primary caregiver."
 } finally {
     $env:APP_PORT = $previousPort
 }

@@ -40,9 +40,13 @@ class BufferTests(unittest.TestCase):
                 for index, device in enumerate(DEVICE_IDS):
                     rows = connection.execute("SELECT payload FROM frames WHERE device_id = ? ORDER BY sequence",
                                               (str(device),))
-                    oxygen = [json.loads(row["payload"])["spo2_pct"] for row in rows]
+                    payloads = [json.loads(row["payload"]) for row in rows]
+                    oxygen = [payload["spo2_pct"] for payload in payloads]
                     if index == 0:
                         self.assertEqual(oxygen[1:7], [93] * 3 + [88] * 3)
+                        heart_rates = [payload["heart_rate_bpm"] for payload in payloads]
+                        self.assertEqual(heart_rates[2:4], [115, 115])
+                        self.assertLessEqual(max(heart_rates[:2] + heart_rates[4:]), 110)
                         self.assertGreaterEqual(min(oxygen[0], oxygen[-1]), 96)
                     else:
                         self.assertGreaterEqual(min(oxygen), 96)

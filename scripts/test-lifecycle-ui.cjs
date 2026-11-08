@@ -40,8 +40,17 @@ with urlopen(Request("http://localhost:8000/api/v1/readings",data=json.dumps(pay
     page.on("pageerror", error => errors.push(error.message));
     await page.goto(base);
     let card = page.locator(`[data-alert-id="${alert.id}"]`);
-    await card.getByText(/Assigned to primary caregiver Alex/).waitFor();
+    const patient = page.getByRole("region", { name: "Patient roster" }).locator("article").first();
+    const pendingRisk = patient.locator(".pending-risk");
+    await card.getByText(/Assigned to Primary caregiver/).waitFor();
     await card.getByText(/Backup escalation due/).waitFor();
+    await patient.getByText("High risk", { exact: true }).waitFor();
+    reading(2);
+    assert.equal((await get("/dashboard")).patients[0].current_assessment.concern, "none");
+    await page.reload();
+    await pendingRisk.filter({ hasText: /Awaiting acknowledgement by Primary caregiver/ }).waitFor();
+    await patient.getByText("High risk", { exact: true }).waitFor();
+    assert.equal(await patient.locator(".assessment-risk .status-badge").count(), 1);
     const deadline = Date.parse(alert.escalation_due_at);
     let escalated;
     while (Date.now() < deadline + 6500) {
@@ -53,17 +62,25 @@ with urlopen(Request("http://localhost:8000/api/v1/readings",data=json.dumps(pay
     const lag = Date.parse(escalated.escalated_at) - deadline;
     assert.ok(lag >= 0 && lag <= 5000, `Escalation lag ${lag} ms exceeded one loop interval`);
     console.log(`Actual primary timeout processed ${lag} ms after deadline.`);
+    await pendingRisk.filter({ hasText: /Awaiting acknowledgement by Backup caregiver/ }).waitFor();
+    await card.getByText(/Escalated to Backup caregiver/).waitFor();
+    assert.equal(await card.getByRole("button", { name: "Acknowledge", exact: true }).isDisabled(), true);
+    await card.getByText(/Visible to you as primary caregiver/).waitFor();
+    reading(3);
+    await patient.getByText("High risk", { exact: true }).waitFor();
     await page.getByLabel("Demo caregiver").selectOption("10000000-0000-0000-0000-000000000002");
-    await card.getByText(/Escalated to backup caregiver Sam/).waitFor();
+    await card.getByText(/Escalated to Backup caregiver/).waitFor();
     await card.getByRole("button", { name: "Acknowledge", exact: true }).click();
-    await card.getByText(/Acknowledged by Sam/).waitFor();
+    await card.getByText(/Acknowledged by Backup caregiver/).waitFor();
+    await pendingRisk.waitFor({ state: "detached" });
+    await patient.getByText("No risk", { exact: true }).waitFor();
     await card.getByLabel(/Resolution note/).fill("Recovery verified <b>synthetic note</b>");
     await card.getByRole("button", { name: "Resolve alert", exact: true }).click();
     await card.getByRole("alert").getByText(/three consecutive fresh complete readings/).waitFor();
     await page.reload();
     await page.getByLabel("Demo caregiver").selectOption("10000000-0000-0000-0000-000000000002");
     assert.equal(await card.getByLabel(/Resolution note/).inputValue(), "Recovery verified <b>synthetic note</b>");
-    for (const sequence of [2, 3, 4]) reading(sequence);
+    for (const sequence of [4, 5, 6]) reading(sequence);
     await card.getByText(/Recovery: 3\/3/).waitFor();
     await page.getByLabel("Show recently resolved alerts").check();
     let lostCommand;
@@ -91,7 +108,7 @@ with urlopen(Request("http://localhost:8000/api/v1/readings",data=json.dumps(pay
     assert.equal(saved.events.filter(e => e.event_type === "escalated").length, 1);
     assert.equal(saved.events.filter(e => e.event_type === "resolved").length, 1);
     await page.screenshot({ path: "m5-browser-evidence.png", fullPage: true });
-    console.log("Passed browser primary timeout → backup acknowledgement → recovery → resolution; lost-response replay and literal history note.");
+    console.log("Passed roster alert retention across normal readings, reload and backup handoff, removal on acknowledgement, resolution and lost-response replay.");
 
     reading(1, 88, 2);
     const pending = (await get("/alerts")).items.find(a => a.kind === "risk" && a.status === "open");
@@ -109,6 +126,23 @@ with urlopen(Request("http://localhost:8000/api/v1/readings",data=json.dumps(pay
     restarted = await get(`/alerts/${pending.id}`);
     assert.equal(restarted.events.filter(e => e.event_type === "escalated").length, 1);
     assert.deepEqual(await get(`/alerts/${alert.id}`), saved);
+    // Reopening an old episode must move it ahead of a newer episode.
+    await page.goto(base);
+    await page.getByText("Live updates connected", { exact: true }).waitFor();
+    reading(1, 88, 3);
+    const newer = (await get("/alerts")).items.find(a => a.kind === "risk" && a.patient_id.endsWith("3"));
+    const inbox = page.getByRole("region", { name: "Caregiver inbox" });
+    await page.waitForFunction(id => document.querySelector('#caregiver-inbox [data-alert-id]')?.getAttribute('data-alert-id') === id, newer.id);
+    const ack = await fetch(`${base}/api/v1/alerts/${pending.id}/acknowledge`, {
+      method: "POST", headers: { "Content-Type": "application/json", "X-Demo-Caregiver-Id": "10000000-0000-0000-0000-000000000002" },
+      body: JSON.stringify({ command_id: require("node:crypto").randomUUID() }),
+    });
+    assert.equal(ack.status, 200);
+    reading(2, 99, 2);
+    reading(3, 88, 2);
+    await page.waitForFunction(id => document.querySelector('#caregiver-inbox [data-alert-id]')?.getAttribute('data-alert-id') === id, pending.id);
+    assert.ok(await inbox.locator(`[data-alert-id="${newer.id}"]`).isVisible());
+    console.log("Passed newest-first ordering for new and reopened episodes without reload.");
     assert.deepEqual(errors, []);
     console.log("Passed real stop/start overdue recovery, second restart without duplicate escalation, and durable resolved state/history.");
   } finally {

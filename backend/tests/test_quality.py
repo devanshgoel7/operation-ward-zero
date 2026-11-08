@@ -82,6 +82,11 @@ def test_stale_display_last_concern_and_delayed_evidence(client: TestClient) -> 
     send(5, 0, spo2_pct=88, temperature_c=None)
     latest = client.get(PATH).json()
     assert latest["data_quality"] == "stale" and latest["current_assessment"]["concern"] == "high"
+    roster = client.get(f"{API}/dashboard").json()["patients"][0]
+    assert roster == latest
+    assessment = roster["current_assessment"]
+    assert assessment["data_quality"] == "incomplete"
+    assert [(f["rule_id"], f["priority"], f["value"]) for f in assessment["findings"]] == [("spo2_pct.low.high", "high", 88)]
 
 
 def test_worker_overdue(client: TestClient) -> None:

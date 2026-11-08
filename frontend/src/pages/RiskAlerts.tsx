@@ -3,20 +3,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { acknowledgeAlert, fetchAlert, fetchResolvedAlerts, resolveAlert } from "../api/monitoring";
 import type { components } from "../api/schema";
 import { useSync } from "../api/Realtime";
+import { AssessmentRisk, assessmentMetricName } from "../components/AssessmentRisk";
 import { StatusBadge } from "../components/DashboardShell";
 
 type Schemas = components["schemas"];
 type Assessment = Schemas["Assessment"];
 
-const metricNames: Record<string, string> = {
-  heart_rate_bpm: "Heart rate", spo2_pct: "Oxygen saturation", systolic_mmhg: "Systolic pressure",
-  diastolic_mmhg: "Diastolic pressure", temperature_c: "Temperature",
-};
-
 export function Evidence({ assessment }: { assessment: Assessment }) {
   return <>
     <ul className="findings">{assessment.findings.map(f => <li key={f.rule_id}>
-      <b>{metricNames[f.metric] ?? f.metric.replaceAll("_", " ")}</b> {f.value} {f.unit} · {f.priority} when {f.condition}
+      <b>{assessmentMetricName(f.metric)}</b> {f.value} {f.unit} · {f.priority} when {f.condition}
       <br/><small>Observed {new Date(f.observed_at).toLocaleString()} · Rule {f.rule_id}</small>
       {(f.observations ?? []).map(o => <p key={o.observation_id} className="source">
         Observation {o.observation_id} · {o.tag.replaceAll("_", " ")} · actor {o.caregiver_id}
@@ -116,21 +112,25 @@ function Episode({ alert, actor, patient, assignee, backup, caregivers }: {
   return <article className="episode" data-priority={alert.peak_priority} data-alert-id={alert.id}>
     <div className="episode-heading"><h3>{patient}</h3><StatusBadge tone={alert.peak_priority}>{alert.peak_priority} priority</StatusBadge></div>
     <strong>{{ risk: "Risk concern", monitoring_gap: "Monitoring gap", delayed_review: "Delayed review" }[alert.kind]}</strong>
+    <p>Opened/reopened <time dateTime={alert.response_started_at}>{new Date(alert.response_started_at).toLocaleString()}</time></p>
     {alert.kind === "monitoring_gap" && <p>Opened after 30 seconds without a complete reading. Three consecutive fresh complete readings close this gap.</p>}
-    <p>{backup ? "Escalated to backup caregiver" : "Assigned to primary caregiver"} {assignee} · {alert.status === "open" ? "Awaiting acknowledgement" :
+    <p>{backup ? "Escalated to" : "Assigned to"} {assignee} · {alert.status === "open" ? "Awaiting acknowledgement" :
       alert.status === "resolved" ? `Resolved at ${new Date(alert.resolved_at!).toLocaleString()}` :
       `Acknowledged by ${assignee} at ${new Date(alert.acknowledged_at!).toLocaleString()}`}</p>
     {alert.escalation_due_at && <p>Backup escalation due {new Date(alert.escalation_due_at).toLocaleTimeString()} · 30/60-second demonstration deadlines.</p>}
     {alert.status === "open" && backup && !alert.escalation_due_at && <p>Backup acknowledgement pending. No further escalation tier.</p>}
+    {actor !== alert.assignee_id && <p>Visible to you as primary caregiver. {assignee} is responsible for acknowledgement and resolution.</p>}
     {alert.kind === "risk" && alert.status !== "resolved" && <p>
       Recovery: {alert.recovery_count}/3 consecutive fresh complete readings with no firing rules.
       Resolution requires acknowledgement and a note; stale recovery cannot resolve an alert.
     </p>}
     {alert.kind === "delayed_review" && alert.status !== "resolved" && <p>Resolve after acknowledgement and a review note.</p>}
-    {alert.latest_assessment && <><h4>Latest alert evidence <span className="severity" data-level={alert.latest_assessment.concern}>{alert.latest_assessment.concern}</span></h4>
+    {alert.latest_assessment && <><h4>Latest alert evidence</h4>
+    <AssessmentRisk assessment={alert.latest_assessment}/>
     <Evidence assessment={alert.latest_assessment}/></>}
     {alert.original_assessment && alert.original_assessment.id !== alert.latest_assessment?.id && <details>
-      <summary>Opening evidence <span className="severity" data-level={alert.original_assessment.concern}>{alert.original_assessment.concern}</span></summary><Evidence assessment={alert.original_assessment}/>
+      <summary>Opening evidence <AssessmentRisk assessment={alert.original_assessment}/></summary>
+      <Evidence assessment={alert.original_assessment}/>
     </details>}
     {(alert.status === "open" || savedAck) && <button type="button" disabled={actor !== alert.assignee_id || action.isPending}
       onClick={() => action.mutate()}>{action.isPending ? "Saving acknowledgement…" : savedAck ? "Retry saved acknowledgement" : "Acknowledge"}</button>}
@@ -145,7 +145,9 @@ export function RiskAlerts({ dashboard, actor, outdated }: {
   dashboard: Schemas["Dashboard"]; actor: string; outdated: boolean;
 }) {
   const { interval } = useSync();
-  const assignedAlerts = dashboard.active_alerts.filter(alert => alert.assignee_id === actor);
+  const inboxAlerts = dashboard.active_alerts.filter(alert => alert.assignee_id === actor ||
+    dashboard.patients.some(({ patient }) => patient.id === alert.patient_id && patient.primary_caregiver_id === actor))
+    .sort((a, b) => Date.parse(b.response_started_at) - Date.parse(a.response_started_at) || b.id.localeCompare(a.id));
   const [showResolved, setShowResolved] = useState(false);
   const resolved = useQuery({ queryKey: ["resolved-alerts", actor],
     queryFn: ({ signal }) => fetchResolvedAlerts(actor, signal), enabled: showResolved,
@@ -158,8 +160,9 @@ export function RiskAlerts({ dashboard, actor, outdated }: {
   }
   return <>
     {outdated && <p className="cached-warning">Cached inbox — assignments, deadlines and recovery progress may have changed. Actions are confirmed by the server.</p>}
-    {assignedAlerts.length === 0 && <p className="empty-state">{outdated ? "No assigned alerts in the last received snapshot." : "No alerts assigned to this caregiver."}</p>}
-    {assignedAlerts.map(renderEpisode)}
+    <p role="status" aria-atomic="true">{inboxAlerts.length} active alerts in this inbox · newest opening/reopening first.</p>
+    {inboxAlerts.length === 0 && <p className="empty-state">{outdated ? "No alerts in the last received inbox snapshot." : "No active alerts for this caregiver."}</p>}
+    {inboxAlerts.map(renderEpisode)}
     <label className="resolved-toggle"><input type="checkbox" checked={showResolved} onChange={e => setShowResolved(e.target.checked)}/> Show recently resolved alerts</label>
     {showResolved && <div>
       <p>Newest 50 resolved episodes for this caregiver. Full saved history remains available through the alerts API.</p>

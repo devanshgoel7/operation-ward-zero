@@ -16,28 +16,34 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     let attempts = 0;
     let lastMessage = Date.now();
     let openedAt = Date.now();
-    let flushing = false;
+    const flushing = new Set<string>();
     let reconcileSocket: WebSocket | undefined;
     const pending = new Set<string>();
     const keys = ["dashboard", "history", "alert", "resolved-alerts", "readiness"];
 
-    async function flush() {
-      if (disposed || flushing) return;
-      flushing = true;
+    async function flush(key: string) {
+      if (disposed || flushing.has(key)) return;
+      flushing.add(key);
       try {
-        while (pending.size && !disposed) {
-          const batch = [...pending]; pending.clear();
-          // Serialize batches: a hint arriving during a fetch must cause a later fetch.
-          await Promise.all(batch.map(key => cache.invalidateQueries({ queryKey: [key] }, { cancelRefetch: false })));
+        while (pending.has(key) && !disposed) {
+          pending.delete(key);
+          // Serialize each query family so hints during a fetch trigger a later fetch.
+          // A slow history request must not hold up dashboard and inbox updates.
+          await cache.invalidateQueries({ queryKey: [key] }, { cancelRefetch: false });
         }
-        if (!disposed && reconcileSocket === socket && socket?.readyState === WebSocket.OPEN) {
+      } finally {
+        flushing.delete(key);
+        if (!disposed && !pending.size && !flushing.size && reconcileSocket === socket && socket?.readyState === WebSocket.OPEN) {
           setConnection("connected"); reconcileSocket = undefined;
         }
-      } finally { flushing = false; }
+      }
     }
     function queue(names: string[]) {
       names.forEach(name => pending.add(name));
-      if (!flushTimer) flushTimer = setTimeout(() => { flushTimer = undefined; void flush(); }, 80);
+      if (!flushTimer) flushTimer = setTimeout(() => {
+        flushTimer = undefined;
+        pending.forEach(key => { void flush(key); });
+      }, 80);
     }
     function disconnect(current: WebSocket) {
       if (disposed || socket !== current) return;

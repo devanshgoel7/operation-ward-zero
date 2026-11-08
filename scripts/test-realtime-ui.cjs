@@ -29,12 +29,12 @@ async function main() {
     const response = await fetch(base + "/api/v1" + path);
     assert.equal(response.status, 200); return response.json();
   };
-  const reading = (n = 1, spo2 = 99, temperature = 36.7) => JSON.parse(python(`
+  const reading = (n = 1, spo2 = 99, temperature = 36.7, heartRate = 73) => JSON.parse(python(`
 import json, os, uuid
 from datetime import UTC, datetime
 from urllib.request import Request, urlopen
 payload=dict(reading_id=str(uuid.uuid4()),device_id="30000000-0000-0000-0000-00000000000${n}",
-    sequence=${++seq[n-1]},observed_at=datetime.now(UTC).isoformat(),heart_rate_bpm=73,spo2_pct=${spo2},
+    sequence=${++seq[n-1]},observed_at=datetime.now(UTC).isoformat(),heart_rate_bpm=${heartRate},spo2_pct=${spo2},
     systolic_mmhg=119,diastolic_mmhg=79,temperature_c=${temperature === null ? "None" : temperature})
 with urlopen(Request("http://localhost:8000/api/v1/readings",data=json.dumps(payload).encode(),
     headers={"Content-Type":"application/json","X-Simulator-Key":os.environ["SIMULATOR_KEY"]})) as response:
@@ -88,33 +88,57 @@ print(json.dumps(payload))
     await page.goto(url);
     await page.getByText("Live updates connected", { exact: true }).waitFor();
     await page.locator(".patients").getByText("unavailable", { exact: true }).first().waitFor();
+    await page.locator(".patients article").first().getByText("Unknown risk", { exact: true }).waitFor();
+    await page.locator(".patients article").first().getByText("No vital readings available.", { exact: true }).waitFor();
     await page.keyboard.press("Tab");
     assert.equal(await page.locator(":focus").textContent(), "Skip to patient monitoring");
     await page.keyboard.press("Enter");
     for (let n = 1; n <= 3; n++) {
       const start = Date.now();
       const payload = reading(n);
-      await page.locator(`[data-reading-id="${payload.reading_id}"]`).waitFor({ timeout: 2000 });
+      const row = page.locator(`[data-reading-id="${payload.reading_id}"]`);
+      await row.getByText("No risk", { exact: true }).waitFor({ timeout: 2000 });
+      await row.getByText("No configured concern detected", { exact: true }).waitFor();
       latency.push(Date.now() - start);
       assert.ok(latency.at(-1) <= 2000, `Reading display latency ${latency.at(-1)}ms`);
     }
     const panel = page.getByRole("region", { name: "History and observations" });
-    await panel.getByText(/1 stored readings/).waitFor();
-    await tabTo(page, panel.getByLabel("Chart metric"));
+    const vitals = page.getByRole("region", { name: "Vital signs overview" });
+    await vitals.getByText(/1 stored readings/).waitFor();
+    await tabTo(page, vitals.getByLabel("Chart metric"));
     await page.keyboard.press("ArrowDown");
-    await panel.getByRole("img", { name: "Heart rate history from stored readings" }).waitFor();
-    const chartBounds = await panel.locator(".recharts-surface").boundingBox();
+    await vitals.getByRole("img", { name: "Heart rate history from stored readings" }).waitFor();
+    const chartBounds = await vitals.locator(".recharts-surface").boundingBox();
     assert.ok(chartBounds && chartBounds.width > 300 && chartBounds.height >= 200, "Chart must have visible dimensions");
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await page.screenshot({ path: "m6-browser-evidence.png", fullPage: true });
     console.log(`Committed reading → rendered card upper bounds (including request overhead): ${latency.join(", ")} ms.`);
+    // A slow chart fetch must not block subsequent inbox hints.
+    let releaseHistory;
+    let historyStarted;
+    const historyGate = new Promise(resolve => { releaseHistory = resolve; });
+    const historyRequest = new Promise(resolve => { historyStarted = resolve; });
+    await page.route("**/readings?*", async route => {
+      historyStarted();
+      await historyGate;
+      await route.continue();
+    }, { times: 1 });
+    reading(1);
+    await historyRequest;
+    const low = reading(2, 93);
+    await page.locator(`[data-reading-id="${low.reading_id}"]`).getByText("Low risk", { exact: true }).waitFor({ timeout: 2000 });
+    const medium = reading(2, 93, 36.7, 115);
+    await page.locator(`[data-reading-id="${medium.reading_id}"]`).getByText("Medium risk", { exact: true }).waitFor();
     const alertStart = Date.now();
-    reading(2, 88);
+    const high = reading(2, 88);
     const liveAlert = (await get("/alerts")).items.find(a => a.patient_id === patient(2) && a.kind === "risk");
-    await page.locator(`[data-alert-id="${liveAlert.id}"]`).waitFor({ timeout: 2000 });
+    await page.locator(`[data-alert-id="${liveAlert.id}"]`).getByText("high priority", { exact: true }).waitFor({ timeout: 2000 });
     const alertLatency = Date.now() - alertStart;
     assert.ok(alertLatency <= 2000, `Alert display latency ${alertLatency}ms`);
     console.log(`Committed alert → rendered inbox upper bound: ${alertLatency} ms.`);
+    releaseHistory();
+    const highRow = page.locator(`[data-reading-id="${high.reading_id}"]`);
+    await highRow.getByText("High risk", { exact: true }).waitFor();
 
     // Real browser TCP interruption: app stays up, so it can commit a missed alert.
     offline = true;
@@ -122,6 +146,8 @@ print(json.dumps(payload))
     await page.getByText(/Live updates disconnected/).waitFor();
     await page.getByRole("alert").getByText(/Refresh failed/).waitFor();
     await page.locator(".patients").getByText(/Unknown — showing cached data/).first().waitFor();
+    await highRow.getByText("High risk", { exact: true }).waitFor();
+    await highRow.getByText(/Last received status · Awaiting acknowledgement/).waitFor();
     await panel.getByText(/Cached context/).waitFor();
     const missed = reading(1, 88);
     const alert = (await get("/alerts")).items.find(a => a.patient_id === patient(1) && a.kind === "risk");
@@ -131,7 +157,7 @@ print(json.dumps(payload))
     let card = page.locator(`[data-alert-id="${alert.id}"]`);
     await card.getByText(/Awaiting acknowledgement/).waitFor();
     await page.locator(`[data-reading-id="${missed.reading_id}"]`).waitFor();
-    await panel.getByText(/2 stored readings/).waitFor();
+    await vitals.getByText(/3 stored readings/).waitFor();
     console.log("Passed real transport cut, cached/unknown state, and REST reconciliation of missed alert/history.");
 
     // Lose the actual committed acknowledgement response, then reload and retry the ID.
@@ -174,7 +200,7 @@ print(json.dumps(payload))
     await card.getByText("Resolution note: M6 recovery <literal> note", { exact: true }).waitFor();
 
     // Observation payload survives both navigation and a failed save/reload.
-    await panel.getByLabel("Selected patient").selectOption(patient(3));
+    await vitals.getByLabel("Selected patient").selectOption(patient(3));
     await panel.getByLabel("Observation tag").selectOption("dizziness");
     await panel.getByLabel(/Optional note/).fill("M6 retained observation");
     let observation;
@@ -182,7 +208,7 @@ print(json.dumps(payload))
     await panel.getByRole("button", { name: "Save observation", exact: true }).click();
     await panel.getByRole("alert").getByText(/Draft retained/).waitFor();
     await page.reload();
-    await panel.getByLabel("Selected patient").selectOption(patient(3));
+    await vitals.getByLabel("Selected patient").selectOption(patient(3));
     assert.equal(await panel.getByLabel(/Optional note/).inputValue(), observation.note);
     let retryObservation;
     await page.route("**/observations", async route => { retryObservation = route.request().postDataJSON(); await route.continue(); }, { times: 1 });
@@ -205,16 +231,31 @@ print(json.dumps(payload))
     for (const socket of upgraded) socket.destroy();
     await page.getByText(/Live updates disconnected/).waitFor();
     const fallback = reading(2, 88, null);
-    await page.locator(`[data-reading-id="${fallback.reading_id}"]`).getByText("incomplete", { exact: true }).waitFor({ timeout: 7000 });
+    const incompleteRow = page.locator(`[data-reading-id="${fallback.reading_id}"]`);
+    await incompleteRow.getByText("incomplete", { exact: true }).waitFor({ timeout: 7000 });
+    await incompleteRow.getByText("High risk", { exact: true }).waitFor();
+    await incompleteRow.getByText("Oxygen saturation was below the demo limit (88%).", { exact: true }).waitFor();
     blockWS = false;
     await page.getByText("Live updates connected", { exact: true }).waitFor({ timeout: 20000 });
     console.log("Passed WebSocket-only failure with working polling fallback and incomplete High rendering.");
 
+    reading(1);
+    const missing = reading(1, 99, null);
+    const missingRow = page.locator(`[data-reading-id="${missing.reading_id}"]`);
+    await missingRow.getByText("Unknown risk", { exact: true }).waitFor();
+    await missingRow.getByText("Insufficient measurements.", { exact: true }).waitFor();
+
     // Let a real reading age past the approved freshness limit.
-    const stable = reading(2);
-    await page.locator(`[data-reading-id="${stable.reading_id}"]`).getByText("fresh", { exact: true }).waitFor();
-    await page.locator(`[data-reading-id="${stable.reading_id}"]`).getByText("stale", { exact: true }).waitFor({ timeout: 40000 });
-    await page.locator(`[data-reading-id="${stable.reading_id}"]`).getByText(/Last known concern/).waitFor();
+    const stable = reading(1);
+    const stableRow = page.locator(`[data-reading-id="${stable.reading_id}"]`);
+    await stableRow.getByText("fresh", { exact: true }).waitFor();
+    await stableRow.getByText("stale", { exact: true }).waitFor({ timeout: 40000 });
+    await stableRow.getByText("Unknown risk", { exact: true }).waitFor();
+    await stableRow.getByText("Vital readings are stale.", { exact: true }).waitFor();
+    const lastKnown = stableRow.getByText(/Last known concern · No risk/);
+    await lastKnown.waitFor();
+    assert.equal(new Date(await lastKnown.locator("time").getAttribute("datetime")).toISOString(),
+      new Date(stable.observed_at).toISOString());
     // Leave the TCP connection open but stop forwarding frames. Heartbeat loss must be detected.
     blockWS = true;
     for (const upstream of upstreamSockets) upstream.pause();

@@ -84,7 +84,12 @@ def test_each_tag_without_readings_and_false_clears(client, tag):
     assessed = response.json()["assessment"]
     assert assessed["concern"] == "watch" and assessed["data_quality"] == "unavailable"
     assert assessed["reading_id"] is None
-    assert client.get(PATH).json()["current_assessment"]["id"] == assessed["id"]
+    snapshot = client.get(f"{API}/dashboard").json()["patients"][0]
+    assert snapshot["latest_reading"] is None and snapshot["data_quality"] == "unavailable"
+    assert snapshot["current_assessment"] == assessed
+    [finding] = assessed["findings"]
+    assert finding["rule_id"] == f"observation.{tag}.watch"
+    assert finding["observations"] == [response.json()["observation"]]
     assert post(client, observation(tag=tag, present=False)).json()["assessment"]["concern"] is None
     assert client.get(PATH).json()["active_observations"] == []
 

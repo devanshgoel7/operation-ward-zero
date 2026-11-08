@@ -35,14 +35,19 @@ for i in range(24):
 `);
     await page.goto(base);
     const panel = page.getByRole("region", { name: "History and observations" });
+    const vitals = page.getByRole("region", { name: "Vital signs overview" });
+    const roster = page.getByRole("region", { name: "Patient roster" });
+    const risk = roster.locator("article").first().locator(".assessment-risk");
+    await risk.getByText("Medium risk", { exact: true }).waitFor();
+    await risk.getByText("2 distinct Watch signals. Oxygen saturation fell 3 percentage points.", { exact: true }).waitFor();
     await panel.getByText(/change -3 percentage points/).waitFor();
     await panel.getByText(/change \+20 bpm/).waitFor();
-    await panel.getByText(/24 stored readings/).waitFor();
+    await vitals.getByText(/24 stored readings/).waitFor();
     assert.equal(await page.locator(".history-chart .recharts-line-curve").count(), 1);
     const chartBounds = await page.locator(".history-chart .recharts-surface").boundingBox();
     assert.ok(chartBounds && chartBounds.width > 300 && chartBounds.height >= 200, "Chart must render at a readable size");
-    await panel.getByLabel("Chart metric").selectOption("heart_rate_bpm");
-    await panel.getByRole("img", { name: "Heart rate history from stored readings" }).waitFor();
+    await vitals.getByLabel("Chart metric").selectOption("heart_rate_bpm");
+    await vitals.getByRole("img", { name: "Heart rate history from stored readings" }).waitFor();
     await panel.getByLabel(/Optional note/).fill("Synthetic M4 browser demonstration");
     await panel.getByRole("button", { name: "Save observation", exact: true }).click();
     await panel.getByRole("status").getByText("Observation saved.").waitFor();
@@ -50,7 +55,16 @@ for i in range(24):
     assert.equal(snapshot.current_assessment.concern, "high");
     const first = snapshot.active_observations[0];
     await panel.getByText(new RegExp(first.observation_id)).first().waitFor();
-    await page.locator(".patients article").first().getByText("high concern").waitFor();
+    await risk.getByText("High risk", { exact: true }).waitFor();
+    await risk.getByText("Caregiver recorded breathlessness alongside low or falling oxygen saturation.", { exact: true }).waitFor();
+    const episode = page.getByRole("region", { name: "Caregiver inbox" }).locator(".episode")
+      .filter({ hasText: "Risk concern" }).filter({ hasText: snapshot.patient.display_name });
+    await episode.getByRole("heading", { name: "Latest alert evidence", exact: true }).waitFor();
+    const latestRisk = episode.locator(".assessment-risk").first();
+    await latestRisk.getByText("High risk", { exact: true }).waitFor();
+    const opening = episode.locator("summary").filter({ hasText: "Opening evidence" });
+    await opening.getByText("Medium risk", { exact: true }).waitFor();
+    await opening.getByText("2 distinct Watch signals. Oxygen saturation fell 3 percentage points.", { exact: true }).waitFor();
     const evidence = snapshot.current_assessment.findings.find(f => f.rule_id === "breathlessness.spo2.high");
     assert.equal(evidence.evidence.length, 24);
     await page.screenshot({ path: "m4-browser-evidence.png", fullPage: true });
@@ -61,6 +75,8 @@ for i in range(24):
     await panel.getByText("No active structured observations.").waitFor();
     snapshot = (await (await fetch(base + "/api/v1/dashboard")).json()).patients[0];
     assert.equal(snapshot.current_assessment.concern, "watch");
+    await latestRisk.getByText("Medium risk", { exact: true }).waitFor();
+    await episode.getByText("high priority", { exact: true }).waitFor();
 
     // The server commits, but the response is dropped. Reload and retry the same UUID.
     await page.getByLabel("Demo caregiver").selectOption("10000000-0000-0000-0000-000000000002");
@@ -98,8 +114,19 @@ for i in range(24):
     assert.ok(!after.current_assessment.findings.some(f => f.observations.length));
     assert.equal(compose("exec", "-T", "db", "psql", "-U", "wardzero", "-Atc",
       "SELECT count(*) FROM assessments WHERE trigger_kind='observation_expiry'").trim(), "1");
+
+    const { patient: other } = (await (await fetch(base + "/api/v1/dashboard")).json()).patients[1];
+    const otherCard = roster.locator("article").filter({ has: page.getByRole("heading", { name: other.display_name, exact: true }) });
+    await otherCard.getByRole("button", { name: `Review patient ${other.display_name}` }).click();
+    await page.getByLabel("Demo caregiver").selectOption(other.primary_caregiver_id);
+    await panel.getByLabel("Observation tag").selectOption("dizziness");
+    await panel.getByRole("button", { name: "Save observation", exact: true }).click();
+    await panel.getByText("Observation saved.", { exact: true }).waitFor();
+    await otherCard.getByText("unavailable", { exact: true }).waitFor();
+    await otherCard.getByText("Low risk", { exact: true }).waitFor();
+    await otherCard.getByText("Caregiver recorded dizziness.", { exact: true }).waitFor();
     assert.deepEqual(errors, []);
-    console.log("Passed: both trends, stored chart, combination High, clearing, actor attribution, literal notes, lost-response retry, and real restart expiry.");
+    console.log("Passed: trend, combination and observation-only reasons, inbox evidence and priority, stored chart, attribution, literal notes, retry and restart expiry.");
   } finally {
     if (browser) await browser.close();
     compose("down");

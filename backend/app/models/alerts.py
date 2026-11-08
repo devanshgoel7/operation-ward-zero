@@ -83,6 +83,7 @@ class Alert(BaseModel):
     recovery_observed_at: AwareDatetime | None
     original_assessment: Assessment | None
     latest_assessment: Assessment | None
+    pending_risk_assessment: Assessment | None = None
     revision: int
 
 

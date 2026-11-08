@@ -145,10 +145,21 @@ async def update_concern_episode(conn: AsyncConnection, patient_id: UUID, assess
     """), values | {"alert_id": alert_id, "event_type": event_type})
 
 
-ALERT_COLUMNS = "a.*, to_jsonb(first_a) AS original_assessment, to_jsonb(last_a) AS latest_assessment"
+ALERT_COLUMNS = """a.*, to_jsonb(first_a) AS original_assessment, to_jsonb(last_a) AS latest_assessment,
+    to_jsonb(pending_a) AS pending_risk_assessment"""
 ALERT_FROM = """
     FROM alerts a LEFT JOIN assessments first_a ON first_a.id = a.original_assessment_id
     LEFT JOIN assessments last_a ON last_a.id = a.latest_assessment_id
+    LEFT JOIN LATERAL (
+        SELECT assessed.* FROM alert_events e JOIN assessments assessed ON assessed.id = e.assessment_id
+        WHERE a.kind = 'risk' AND a.status = 'open' AND e.alert_id = a.id
+          AND e.occurred_at >= a.response_started_at AND assessed.concern IN ('watch','high')
+        ORDER BY (assessed.concern = 'high') DESC,
+          (SELECT count(DISTINCT finding->>'metric') FROM jsonb_array_elements(assessed.findings) finding
+           WHERE finding->>'priority' = 'watch') DESC,
+          e.occurred_at DESC, e.id DESC
+        LIMIT 1
+    ) pending_a ON TRUE
 """
 
 

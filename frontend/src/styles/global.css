@@ -279,6 +279,7 @@ select, textarea { max-width: 100%; padding: 7px 10px; border: 1px solid var(--c
 .patient-vitals small { font-weight: 500; }
 .patient-status { display: grid; justify-items: start; gap: 4px; }
 .patient-reading-detail { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 3px 12px; color: var(--muted); font-size: .75rem; }
+.patient-risk { flex-basis: 100%; }
 .times { display: flex; flex-wrap: wrap; gap: 3px 12px; color: var(--muted); font-size: .75rem; }
 .roster-count { padding: 4px 8px; background: var(--canvas); border-radius: 6px; }
 
@@ -313,9 +314,8 @@ summary { padding-block: 10px; color: var(--accent); font-size: .875rem; font-we
 .findings { padding-left: 20px; margin: 6px 0; font-size: .875rem; }
 .findings li + li { margin-top: 5px; }
 .source { display: block; overflow-wrap: anywhere; }
-.severity { display: inline-block; padding: 3px 7px; border-radius: 10px; background: #eeebf0; color: #534b5b; font-size: .75rem; font-weight: 700; }
-.severity[data-level="watch"] { background: #fff0d7; color: #805015; }
-.severity[data-level="high"] { background: #fce6e6; color: #962f38; }
+.assessment-risk .status-badge { margin-inline-end: 4px; white-space: nowrap; }
+.assessment-risk-reason { color: var(--muted); font-size: .8125rem; font-weight: 400; }
 .resolved-toggle { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; margin-top: 3px; font-size: .875rem; cursor: pointer; }
 .resolved-toggle input { width: 16px; height: 16px; accent-color: var(--accent); }
 .context-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
