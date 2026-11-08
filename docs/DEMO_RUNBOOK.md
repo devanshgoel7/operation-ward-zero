@@ -4,24 +4,30 @@ Use synthetic data only. Thresholds and 30/60-second response deadlines are demo
 
 ## Prerequisites and startup
 
-Use Docker Desktop with Linux containers and Compose. The full verification needs host Python 3.11+, Node.js with npm, Playwright 1.62.1, Microsoft Edge, and FFmpeg with libx264 on PATH. Docker installs the application dependencies from their lockfiles. Playwright runs the frontend checks in Edge.
+Use Docker Desktop in Linux container mode or Docker Engine with the Compose v2 plugin on Linux. Docker installs the application dependencies from their lockfiles.
 
 From the repository root, copy [`.env.example`](../.env.example) to `.env` for a fresh installation. Set `POSTGRES_PASSWORD` and `SIMULATOR_KEY` to separate private values. In PowerShell, `[guid]::NewGuid().ToString('N')` generates one value per invocation. Reuse the original `.env` with an existing PostgreSQL volume.
 
-```powershell
+```sh
 docker compose config -q
-docker compose up --build --wait --wait-timeout 120
+docker compose up -d --build --wait --wait-timeout 120
 docker compose ps
 ```
 
 Open the [dashboard](http://127.0.0.1:8010/) using `APP_PORT` if you changed it. The first build needs network access. Use `docker compose down` for an ordinary stop to retain both named volumes.
 
-Install Microsoft Edge separately. To install the pinned Playwright package outside the repository and make it available to the scripts in the current PowerShell session, run the following commands.
+The full verification needs host Python 3.11+, Node.js with npm, Playwright 1.62.1, Microsoft Edge, and FFmpeg with libx264 on PATH. Use `python3` for host commands if that is how Python is installed. Install Edge separately. Use one of the following blocks to install Playwright outside the repository and make it available to the current shell.
 
 ```powershell
 $toolDirectory = Join-Path ([System.IO.Path]::GetTempPath()) 'wardzero-browser-tools'
 npm install --prefix $toolDirectory playwright@1.62.1
 $env:NODE_PATH = Join-Path $toolDirectory 'node_modules'
+```
+
+```sh
+tool_directory=$(mktemp -d)
+npm install --prefix "$tool_directory" playwright@1.62.1
+export NODE_PATH="$tool_directory/node_modules"
 ```
 
 Verify the host tools before running the full suite.
@@ -70,22 +76,30 @@ The script uses actual service/network operations. It does not change lifecycle 
 
 ## Manual scenario controls
 
-Use these against the intended Compose project; add `-p <project>` after `docker compose` for an isolated fixture:
+For a live walkthrough with clean data, start a new Compose project from the configured checkout. The random loopback port lets the regular dashboard on port 8010 keep running. To use port 8010 for the walkthrough, free that port first and set `APP_PORT` to `8010` instead.
 
 ```powershell
-docker compose exec -T simulator python -m simulator.scenario mira stable
-docker compose exec -T simulator python -m simulator.scenario mira deterioration
-docker compose exec -T simulator python -m simulator.scenario mira recovery
-docker compose exec -T simulator python -m simulator.scenario mira missing
-docker compose exec -T simulator python -m simulator.recovery status
+$demoProject = 'wardzero-judge-demo'
+$env:APP_PORT = '0'
+docker compose -p $demoProject up -d --build --wait --wait-timeout 120
+docker compose -p $demoProject port app 8000
+```
+
+Open the printed address in a browser. Choose a new project name for a clean repeat. Select `stable` and allow two minutes of fresh readings before the trend demonstration. Follow the [nine-step walkthrough](#nine-step-recorded-demo) using these controls.
+
+```powershell
+docker compose -p $demoProject exec -T simulator python -m simulator.scenario mira stable
+docker compose -p $demoProject exec -T simulator python -m simulator.scenario mira deterioration
+docker compose -p $demoProject exec -T simulator python -m simulator.scenario mira recovery
+docker compose -p $demoProject exec -T simulator python -m simulator.scenario mira missing
+docker compose -p $demoProject exec -T simulator python -m simulator.recovery status
 ```
 
 Patients are `mira`, `aryan`, and `lena`. A selection persists in SQLite across simulator restart and affects subsequent committed frames. Stable/recovery uses heart rate 70 and SpO2 99; deterioration uses 90 and 96, so sustained prior stable history is necessary for trends. Missing sets SpO2 null while other measurements continue. Selecting a scenario cancels that patient's short `trigger_alert` sequence. The older `trigger_alert` command clears the persistent selection and still runs its six-reading sequence before ordinary baseline sampling. No prior reading is edited.
 
-For manual network disconnection, use only your isolated project's container and network:
+Use the same project's simulator and network for the outage. Leave it disconnected for about 35 seconds so the dashboard can show staleness and the queue can grow. Run the status command while it is still disconnected, then reconnect.
 
 ```powershell
-$demoProject = '<project printed by the runner>'
 $simulatorContainer = docker compose -p $demoProject ps -q simulator
 docker network disconnect "${demoProject}_default" $simulatorContainer
 docker compose -p $demoProject exec -T simulator python -m simulator.recovery status
@@ -112,6 +126,8 @@ try {
 ```
 
 A passing check has an empty pending set, quarantine set, and all ID discrepancy sets.
+
+After the simulator resumes, select `mira recovery`, clear the breathlessness observation, and wait for three fresh, complete readings without a firing rule. As Backup caregiver, add a resolution note and resolve the episode. Then run `docker compose -p $demoProject restart app`. Once **Service ready** returns, select Backup caregiver and reopen the resolved episode to show the saved note and event history.
 
 ## Evidence, submission and reset
 
